@@ -1,0 +1,34 @@
+{
+  "type": "module",
+  "dependencies": {
+    "axios": "^1.6.2",
+    "bcryptjs": "^3.0.2",
+    "cors": "^2.8.5",
+    "crypto": "^1.0.1",
+    "dotenv": "^16.5.0",
+    "express": "^5.1.0",
+    "express-validator": "^7.2.1",
+    "form-data": "^4.0.0",
+    "html2canvas": "^1.4.1",
+    "html2pdf.js": "^0.10.3",
+    "jsonwebtoken": "^9.0.2",
+    "jspdf": "^3.0.1",
+    "mailersend": "^2.5.0",
+    "moment": "^2.30.1",
+    "mongoose": "^8.14.1",
+    "multer": "^1.4.5-lts.2",
+    "nodemailer": "^7.0.2",
+    "nodemon": "^3.1.10",
+    "pdfkit": "^0.17.1",
+    "socket.io": "^4.8.1"
+  },
+  "scripts": {
+    "start": "node app.js",
+    "dev": "nodemon app.js",
+    "flask": "cd flask_service && python app.py",
+    "dev:all": "concurrently \"npm run dev\" \"npm run flask\""
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
