@@ -20,7 +20,7 @@ const app = express();
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
   cors: {
-    origin: ["http://localhost:5173", "http://localhost:3000"],
+    origin: [process.env.VITE_FRONTEND_URL, process.env.VITE_DASHBOARD_URL, "http://localhost:5173", "http://localhost:3000"],
     methods: ["GET", "POST"],
     credentials: true
   }
@@ -38,7 +38,7 @@ if (!fs.existsSync(uploadsDir)) {
 
 // Middleware
 app.use(cors({
-  origin: ['http://localhost:5173', 'http://localhost:3000'],
+  origin: [process.env.VITE_FRONTEND_URL, process.env.VITE_DASHBOARD_URL, 'http://localhost:5173', 'http://localhost:3000'],
   credentials: true,
 }));
 app.use(express.json());

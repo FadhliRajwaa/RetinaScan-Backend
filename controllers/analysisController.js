@@ -10,8 +10,8 @@ import { dirname } from 'path';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const FLASK_API_URL = 'http://localhost:5001/predict';
-const FLASK_API_INFO_URL = 'http://localhost:5001/info';
+const FLASK_API_URL = process.env.FLASK_API_URL ? `${process.env.FLASK_API_URL}/predict` : 'http://localhost:5001/predict';
+const FLASK_API_INFO_URL = process.env.FLASK_API_URL ? `${process.env.FLASK_API_URL}/info` : 'http://localhost:5001/info';
 
 // Periksa status Flask API
 let flaskApiStatus = {
@@ -142,6 +142,7 @@ export const uploadImage = async (req, res, next) => {
       console.log('Analisis berhasil disimpan dengan ID:', analysis._id);
 
       // Kirim respons ke client dengan URL lengkap
+      const apiBaseUrl = process.env.VITE_API_URL || 'http://localhost:5000';
       res.json({
         message: 'Analisis berhasil',
         prediction: {
@@ -149,7 +150,7 @@ export const uploadImage = async (req, res, next) => {
           confidence: predictionResult.confidence,
           analysisId: analysis._id,
           patientId: analysis.patientId,
-          imageUrl: `http://localhost:5000/uploads/${relativePath}`,
+          imageUrl: `${apiBaseUrl}/uploads/${relativePath}`,
           isSimulation: predictionResult.raw_prediction && predictionResult.raw_prediction.is_simulation
         }
       });
