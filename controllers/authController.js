@@ -22,9 +22,31 @@ export const login = async (req, res, next) => {
     if (!user || !(await user.matchPassword(password))) {
       return res.status(401).json({ message: 'Email atau kata sandi salah' });
     }
-    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '1d' });
-    res.json({ token, user: { id: user._id, name: user.name, email: user.email } });
+    
+    // Buat token dengan informasi user yang lebih lengkap
+    const token = jwt.sign(
+      { 
+        id: user._id, 
+        email: user.email, 
+        name: user.name 
+      }, 
+      process.env.JWT_SECRET, 
+      { expiresIn: '1d' }
+    );
+    
+    console.log('Login berhasil untuk user:', user.email);
+    
+    // Return informasi user dan token
+    res.json({ 
+      token, 
+      user: { 
+        id: user._id, 
+        name: user.name, 
+        email: user.email 
+      } 
+    });
   } catch (error) {
+    console.error('Login error:', error);
     next(error);
   }
 };
