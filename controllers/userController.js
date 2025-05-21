@@ -49,8 +49,13 @@ export const updateProfile = async (req, res, next) => {
 // Fungsi untuk mendapatkan semua data pasien
 export const getAllPatients = async (req, res, next) => {
   try {
-    const patients = await User.find().select('-password -resetPasswordCode -resetPasswordExpires');
-    res.json(patients);
+    // Seharusnya ini mengambil data dari model Patient yang terkait dengan userId
+    // namun sepertinya endpoint ini digunakan untuk tujuan lain di aplikasi
+    // Kita tetapkan supaya hanya mengambil user yang sedang login
+    const currentUser = await User.findById(req.user.id).select('-password -resetPasswordCode -resetPasswordExpires');
+    
+    // Kembalikan hanya user yang sedang login sebagai array untuk mempertahankan kompatibilitas
+    res.json([currentUser]);
   } catch (error) {
     next(error);
   }
@@ -59,6 +64,11 @@ export const getAllPatients = async (req, res, next) => {
 // Fungsi untuk mendapatkan data pasien berdasarkan ID
 export const getPatientById = async (req, res, next) => {
   try {
+    // Hanya izinkan akses ke profil sendiri
+    if (req.params.id !== req.user.id) {
+      return res.status(403).json({ message: 'Tidak memiliki akses ke data pasien ini' });
+    }
+    
     const patient = await User.findById(req.params.id).select('-password -resetPasswordCode -resetPasswordExpires');
     if (!patient) return res.status(404).json({ message: 'Data pasien tidak ditemukan' });
     res.json(patient);

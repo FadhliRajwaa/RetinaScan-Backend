@@ -1,10 +1,10 @@
 import Patient from '../models/Patient.js';
 
-// Fungsi untuk mendapatkan semua data pasien
+// Fungsi untuk mendapatkan semua data pasien milik user yang sedang login
 export const getAllPatients = async (req, res, next) => {
   try {
-    // Mengambil pasien berdasarkan ID user yang login
-    const patients = await Patient.find({ user: req.user.id }).sort({ createdAt: -1 });
+    // Hanya ambil pasien milik user yang sedang login
+    const patients = await Patient.find({ userId: req.user.id }).sort({ createdAt: -1 });
     res.json(patients);
   } catch (error) {
     next(error);
@@ -14,9 +14,10 @@ export const getAllPatients = async (req, res, next) => {
 // Fungsi untuk mendapatkan data pasien berdasarkan ID
 export const getPatientById = async (req, res, next) => {
   try {
+    // Hanya ambil pasien milik user yang sedang login
     const patient = await Patient.findOne({ 
       _id: req.params.id,
-      user: req.user.id // Memastikan pasien milik user yang sedang login
+      userId: req.user.id 
     });
     
     if (!patient) return res.status(404).json({ message: 'Data pasien tidak ditemukan' });
@@ -45,6 +46,7 @@ export const createPatient = async (req, res, next) => {
   
   try {
     const newPatient = new Patient({
+      userId: req.user.id, // Kaitkan pasien dengan user yang login
       name,
       fullName,
       dateOfBirth,
@@ -56,8 +58,7 @@ export const createPatient = async (req, res, next) => {
       medicalHistory,
       allergies,
       lastCheckup,
-      emergencyContact,
-      user: req.user.id // Menyimpan ID user yang sedang login
+      emergencyContact
     });
     
     await newPatient.save();
@@ -84,10 +85,10 @@ export const updatePatient = async (req, res, next) => {
   } = req.body;
   
   try {
-    // Memastikan pasien milik user yang sedang login
+    // Hanya update pasien milik user yang sedang login
     const patient = await Patient.findOne({ 
       _id: req.params.id,
-      user: req.user.id
+      userId: req.user.id 
     });
     
     if (!patient) return res.status(404).json({ message: 'Data pasien tidak ditemukan' });
@@ -114,10 +115,10 @@ export const updatePatient = async (req, res, next) => {
 // Fungsi untuk menghapus pasien
 export const deletePatient = async (req, res, next) => {
   try {
-    // Memastikan pasien milik user yang sedang login
+    // Hanya hapus pasien milik user yang sedang login
     const patient = await Patient.findOne({ 
       _id: req.params.id,
-      user: req.user.id
+      userId: req.user.id 
     });
     
     if (!patient) return res.status(404).json({ message: 'Data pasien tidak ditemukan' });

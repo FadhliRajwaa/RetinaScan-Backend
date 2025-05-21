@@ -188,13 +188,22 @@ export const uploadImage = async (req, res, next) => {
 
 export const getUserAnalyses = async (req, res, next) => {
   try {
+    // Ambil semua analisis milik user yang sedang login
     const analyses = await RetinaAnalysis.find({ userId: req.user.id })
-      .populate('patientId', 'name fullName gender age')
+      .populate({
+        path: 'patientId',
+        match: { userId: req.user.id }, // Pastikan hanya pasien milik user ini
+        select: 'name fullName gender age'
+      })
       .sort({ createdAt: -1 });
+    
+    // Filter hasil untuk menghilangkan analisis dengan patientId null
+    // (ini terjadi jika populate tidak menemukan pasien yang cocok)
+    const filteredAnalyses = analyses.filter(analysis => analysis.patientId);
       
     // Pastikan imageData tersedia untuk semua hasil analisis
     // Gunakan data base64 jika tersedia, jika tidak coba baca dari path
-    for (let analysis of analyses) {
+    for (let analysis of filteredAnalyses) {
       if (!analysis.imageData && analysis.imagePath) {
         try {
           const filePath = path.join(__dirname, '..', analysis.imagePath);
@@ -216,7 +225,7 @@ export const getUserAnalyses = async (req, res, next) => {
       }
     }
     
-    res.json(analyses);
+    res.json(filteredAnalyses);
   } catch (error) {
     console.error('Error saat mengambil riwayat analisis:', error);
     res.status(500).json({ message: 'Gagal mengambil riwayat analisis', error: error.message });
@@ -225,12 +234,17 @@ export const getUserAnalyses = async (req, res, next) => {
 
 export const getAnalysisById = async (req, res, next) => {
   try {
+    // Ambil analisis milik user yang sedang login
     const analysis = await RetinaAnalysis.findOne({ 
       _id: req.params.id,
       userId: req.user.id
-    }).populate('patientId', 'name fullName gender age dateOfBirth bloodType');
+    }).populate({
+      path: 'patientId',
+      match: { userId: req.user.id }, // Pastikan hanya pasien milik user ini
+      select: 'name fullName gender age dateOfBirth bloodType'
+    });
     
-    if (!analysis) {
+    if (!analysis || !analysis.patientId) {
       return res.status(404).json({ message: 'Analisis tidak ditemukan' });
     }
     
@@ -315,11 +329,7 @@ const updateAnalysis = async (req, res) => {
     const { id } = req.params;
     const update = req.body;
 
-    const analysis = await RetinaAnalysis.findOneAndUpdate(
-      { _id: id, userId: req.user.id },
-      update, 
-      { new: true }
-    );
+    const analysis = await RetinaAnalysis.findByIdAndUpdate(id, update, { new: true });
     
     if (!analysis) {
       return res.status(404).json({ message: 'Analysis not found' });
@@ -338,23 +348,16 @@ const updateAnalysis = async (req, res) => {
 export const deleteAnalysis = async (req, res) => {
   try {
     const { id } = req.params;
+    const analysis = await RetinaAnalysis.findByIdAndDelete(id);
     
-    // Temukan analisis berdasarkan ID dan pastikan user yang sama
-    const analysis = await RetinaAnalysis.findOne({ _id: id, userId: req.user.id });
     if (!analysis) {
       return res.status(404).json({ message: 'Analysis not found' });
     }
-    
-    // Hapus dokumen
-    await RetinaAnalysis.deleteOne({ _id: id });
 
     // Delete associated image if exists
     if (analysis.imagePath) {
       try {
-        const filePath = path.join(__dirname, '..', analysis.imagePath);
-        if (fs.existsSync(filePath)) {
-          await fs.promises.unlink(filePath);
-        }
+        await fs.promises.unlink(analysis.imagePath);
       } catch (err) {
         console.error('Error deleting image file:', err);
       }

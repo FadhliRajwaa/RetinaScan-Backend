@@ -1,6 +1,11 @@
 import mongoose from 'mongoose';
 
 const patientSchema = new mongoose.Schema({
+  userId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
+  },
   name: { type: String, required: true },
   fullName: { type: String, required: true },
   age: { type: Number },
@@ -14,12 +19,7 @@ const patientSchema = new mongoose.Schema({
   lastCheckup: { type: Date },
   emergencyContact: { type: String },
   createdAt: { type: Date, default: Date.now },
-  updatedAt: { type: Date, default: Date.now },
-  user: { 
-    type: mongoose.Schema.Types.ObjectId, 
-    ref: 'User', 
-    required: true 
-  }
+  updatedAt: { type: Date, default: Date.now }
 }, {
   timestamps: true
 });
