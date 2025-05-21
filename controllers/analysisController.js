@@ -315,7 +315,11 @@ const updateAnalysis = async (req, res) => {
     const { id } = req.params;
     const update = req.body;
 
-    const analysis = await RetinaAnalysis.findByIdAndUpdate(id, update, { new: true });
+    const analysis = await RetinaAnalysis.findOneAndUpdate(
+      { _id: id, userId: req.user.id },
+      update, 
+      { new: true }
+    );
     
     if (!analysis) {
       return res.status(404).json({ message: 'Analysis not found' });
@@ -334,16 +338,23 @@ const updateAnalysis = async (req, res) => {
 export const deleteAnalysis = async (req, res) => {
   try {
     const { id } = req.params;
-    const analysis = await RetinaAnalysis.findByIdAndDelete(id);
     
+    // Temukan analisis berdasarkan ID dan pastikan user yang sama
+    const analysis = await RetinaAnalysis.findOne({ _id: id, userId: req.user.id });
     if (!analysis) {
       return res.status(404).json({ message: 'Analysis not found' });
     }
+    
+    // Hapus dokumen
+    await RetinaAnalysis.deleteOne({ _id: id });
 
     // Delete associated image if exists
     if (analysis.imagePath) {
       try {
-        await fs.promises.unlink(analysis.imagePath);
+        const filePath = path.join(__dirname, '..', analysis.imagePath);
+        if (fs.existsSync(filePath)) {
+          await fs.promises.unlink(filePath);
+        }
       } catch (err) {
         console.error('Error deleting image file:', err);
       }
