@@ -12,7 +12,11 @@ const retinaAnalysisSchema = new mongoose.Schema({
     required: true
   },
   imagePath: {
-    type: String,
+    type: String, // Tetap simpan path asli jika perlu referensi
+    required: false
+  },
+  imageData: {
+    type: String, // Data gambar dalam format base64
     required: true
   },
   originalFilename: {

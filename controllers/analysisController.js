@@ -125,13 +125,19 @@ export const uploadImage = async (req, res, next) => {
       };
     }
 
-    // Simpan hasil analisis ke database dengan path relatif
+    // Simpan hasil analisis ke database dengan path relatif dan image data
     try {
+      console.log('Membaca file gambar untuk disimpan ke database...');
+      // Baca file gambar dan konversi ke base64
+      const imageBuffer = fs.readFileSync(req.file.path);
+      const imageBase64 = `data:${req.file.mimetype};base64,${imageBuffer.toString('base64')}`;
+      
       console.log('Menyimpan hasil analisis ke database...');
       const analysis = new RetinaAnalysis({
         userId: req.user.id,
         patientId: req.body.patientId,
-        imagePath: relativePath,
+        imagePath: relativePath, // Simpan path juga sebagai backup
+        imageData: imageBase64, // Simpan data gambar base64 ke database
         originalFilename: req.file.originalname,
         severity: predictionResult.severity,
         severityLevel: predictionResult.severity_level || 0,
@@ -141,8 +147,7 @@ export const uploadImage = async (req, res, next) => {
       await analysis.save();
       console.log('Analisis berhasil disimpan dengan ID:', analysis._id);
 
-      // Kirim respons ke client dengan URL lengkap
-      const apiBaseUrl = process.env.VITE_API_URL || 'http://localhost:5000';
+      // Kirim respons ke client
       res.json({
         message: 'Analisis berhasil',
         prediction: {
@@ -150,7 +155,7 @@ export const uploadImage = async (req, res, next) => {
           confidence: predictionResult.confidence,
           analysisId: analysis._id,
           patientId: analysis.patientId,
-          imageUrl: `${apiBaseUrl}/uploads/${relativePath}`,
+          imageData: imageBase64, // Kirim image data langsung ke client
           isSimulation: predictionResult.raw_prediction && predictionResult.raw_prediction.is_simulation
         }
       });
@@ -186,6 +191,30 @@ export const getUserAnalyses = async (req, res, next) => {
     const analyses = await RetinaAnalysis.find({ userId: req.user.id })
       .populate('patientId', 'name fullName gender age')
       .sort({ createdAt: -1 });
+      
+    // Pastikan imageData tersedia untuk semua hasil analisis
+    // Gunakan data base64 jika tersedia, jika tidak coba baca dari path
+    for (let analysis of analyses) {
+      if (!analysis.imageData && analysis.imagePath) {
+        try {
+          const filePath = path.join(__dirname, '..', analysis.imagePath);
+          if (fs.existsSync(filePath)) {
+            const imageBuffer = fs.readFileSync(filePath);
+            // Deteksi mimetype berdasarkan ekstensi file
+            const ext = path.extname(filePath).toLowerCase();
+            let mimetype = 'image/jpeg'; // default
+            if (ext === '.png') mimetype = 'image/png';
+            else if (ext === '.gif') mimetype = 'image/gif';
+            else if (ext === '.webp') mimetype = 'image/webp';
+            
+            analysis.imageData = `data:${mimetype};base64,${imageBuffer.toString('base64')}`;
+            await analysis.save();
+          }
+        } catch (err) {
+          console.error(`Gagal membaca gambar dari path ${analysis.imagePath}:`, err);
+        }
+      }
+    }
     
     res.json(analyses);
   } catch (error) {
@@ -203,6 +232,30 @@ export const getAnalysisById = async (req, res, next) => {
     
     if (!analysis) {
       return res.status(404).json({ message: 'Analisis tidak ditemukan' });
+    }
+    
+    // Pastikan imageData tersedia
+    if (!analysis.imageData && analysis.imagePath) {
+      try {
+        const filePath = path.join(__dirname, '..', analysis.imagePath);
+        if (fs.existsSync(filePath)) {
+          const imageBuffer = fs.readFileSync(filePath);
+          // Deteksi mimetype berdasarkan ekstensi file
+          const ext = path.extname(filePath).toLowerCase();
+          let mimetype = 'image/jpeg'; // default
+          if (ext === '.png') mimetype = 'image/png';
+          else if (ext === '.gif') mimetype = 'image/gif';
+          else if (ext === '.webp') mimetype = 'image/webp';
+          
+          analysis.imageData = `data:${mimetype};base64,${imageBuffer.toString('base64')}`;
+          await analysis.save();
+          console.log('Berhasil mengkonversi dan menyimpan gambar ke database untuk ID:', analysis._id);
+        } else {
+          console.error('File gambar tidak ditemukan:', filePath);
+        }
+      } catch (err) {
+        console.error(`Gagal membaca gambar dari path ${analysis.imagePath}:`, err);
+      }
     }
     
     res.json(analysis);
@@ -278,7 +331,7 @@ const updateAnalysis = async (req, res) => {
   }
 };
 
-export const deleteAnalysis = async (req, res) => {
+const deleteAnalysis = async (req, res) => {
   try {
     const { id } = req.params;
     const analysis = await RetinaAnalysis.findByIdAndDelete(id);
