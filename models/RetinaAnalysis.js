@@ -17,7 +17,7 @@ const retinaAnalysisSchema = new mongoose.Schema({
   },
   imageData: {
     type: String, // Data gambar dalam format base64
-    required: true
+    required: false
   },
   originalFilename: {
     type: String,
