@@ -278,7 +278,7 @@ const updateAnalysis = async (req, res) => {
   }
 };
 
-const deleteAnalysis = async (req, res) => {
+export const deleteAnalysis = async (req, res) => {
   try {
     const { id } = req.params;
     const analysis = await RetinaAnalysis.findByIdAndDelete(id);
