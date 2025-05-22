@@ -13,6 +13,10 @@ import { fileURLToPath } from 'url';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import { dirname } from 'path';
+import mongoose from 'mongoose';
+import RetinaAnalysis from './models/RetinaAnalysis.js';
+import User from './models/User.js';
+import Patient from './models/Patient.js';
 
 // Konfigurasi environment variables
 dotenv.config();
@@ -69,6 +73,13 @@ io.on('connection', (socket) => {
 // Make io accessible to routes
 app.set('io', io);
 
+// Simpan models ke app untuk diakses di routes
+app.set('models', {
+  RetinaAnalysis,
+  User,
+  Patient
+});
+
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/analysis', analysisRoutes);
@@ -83,3 +94,5 @@ connectDB();
 
 const PORT = process.env.PORT || 5000;
 httpServer.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
+export default app;

@@ -9,6 +9,44 @@ router.post('/upload', authMiddleware, upload.single('image'), uploadImage);
 router.get('/history', authMiddleware, getUserAnalyses);
 router.get('/api-status/flask', authMiddleware, getFlaskApiStatus);
 router.get('/test-flask-connection', authMiddleware, testFlaskConnection);
+router.get('/latest', authMiddleware, async (req, res) => {
+  try {
+    const RetinaAnalysis = req.app.get('models').RetinaAnalysis;
+    
+    // Cari analisis terbaru untuk user yang sedang login
+    const latestAnalysis = await RetinaAnalysis.findOne({ 
+      userId: req.user.id 
+    })
+    .populate({
+      path: 'patientId',
+      select: 'name fullName gender age'
+    })
+    .sort({ createdAt: -1 });
+    
+    if (!latestAnalysis) {
+      return res.status(404).json({ message: 'Belum ada analisis yang dilakukan' });
+    }
+    
+    // Format hasil untuk frontend
+    const result = {
+      severity: latestAnalysis.severity,
+      severityLevel: latestAnalysis.severityLevel,
+      confidence: latestAnalysis.confidence,
+      recommendation: latestAnalysis.notes,
+      analysisId: latestAnalysis._id,
+      patientId: latestAnalysis.patientId,
+      patientName: latestAnalysis.patientId ? latestAnalysis.patientId.fullName || latestAnalysis.patientId.name : 'Unknown',
+      imageData: latestAnalysis.imageData,
+      createdAt: latestAnalysis.createdAt,
+      isSimulation: latestAnalysis.isSimulation
+    };
+    
+    res.json(result);
+  } catch (error) {
+    console.error('Error saat mengambil analisis terbaru:', error);
+    res.status(500).json({ message: 'Gagal mengambil analisis terbaru', error: error.message });
+  }
+});
 router.get('/:id', authMiddleware, getAnalysisById);
 router.delete('/:id', authMiddleware, deleteAnalysis);
 

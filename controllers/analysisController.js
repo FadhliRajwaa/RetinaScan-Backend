@@ -187,6 +187,70 @@ export const uploadImage = async (req, res, next) => {
               console.warn('PERHATIAN: Menggunakan hasil simulasi dari Flask API, bukan prediksi model yang sebenarnya');
               isSimulation = true;
             }
+
+            // Map kelas dari Flask API ke format yang diharapkan frontend
+            if (predictionResult.severity) {
+              // Pemetaan kelas dari Flask API ke format frontend
+              const severityMapping = {
+                'Tidak ada DR': 'Tidak ada',
+                'DR Ringan': 'Ringan',
+                'DR Sedang': 'Sedang',
+                'DR Berat': 'Berat',
+                'DR Proliferatif': 'Sangat Berat',
+                // Fallback untuk format lama
+                'Normal': 'Tidak ada',
+                'Diabetic Retinopathy': 'Sedang',
+                // Tambahan untuk kompatibilitas dengan Flask API terbaru
+                'No DR': 'Tidak ada',
+                'Mild': 'Ringan',
+                'Moderate': 'Sedang',
+                'Severe': 'Berat',
+                'Proliferative DR': 'Sangat Berat'
+              };
+
+              // Map severity ke format frontend
+              predictionResult.frontendSeverity = severityMapping[predictionResult.severity] || predictionResult.severity;
+              
+              // Map severity level ke format frontend (0-4)
+              const severityLevelMapping = {
+                'Tidak ada DR': 0,
+                'DR Ringan': 1,
+                'DR Sedang': 2,
+                'DR Berat': 3,
+                'DR Proliferatif': 4,
+                // Fallback untuk format lama
+                'Normal': 0,
+                'Diabetic Retinopathy': 2,
+                // Tambahan untuk kompatibilitas dengan Flask API terbaru
+                'No DR': 0,
+                'Mild': 1,
+                'Moderate': 2,
+                'Severe': 3,
+                'Proliferative DR': 4
+              };
+              
+              predictionResult.frontendSeverityLevel = severityLevelMapping[predictionResult.severity] || predictionResult.severity_level || 0;
+              
+              // Tambahkan rekomendasi berdasarkan tingkat keparahan
+              const recommendationMapping = {
+                'Tidak ada DR': 'Lakukan pemeriksaan rutin setiap tahun.',
+                'DR Ringan': 'Kontrol gula darah dan tekanan darah. Pemeriksaan ulang dalam 9-12 bulan.',
+                'DR Sedang': 'Konsultasi dengan dokter spesialis mata. Pemeriksaan ulang dalam 6 bulan.',
+                'DR Berat': 'Rujukan segera ke dokter spesialis mata. Pemeriksaan ulang dalam 2-3 bulan.',
+                'DR Proliferatif': 'Rujukan segera ke dokter spesialis mata untuk evaluasi dan kemungkinan tindakan laser atau operasi.',
+                // Fallback untuk format lama
+                'Normal': 'Lakukan pemeriksaan rutin setiap tahun.',
+                'Diabetic Retinopathy': 'Konsultasi dengan dokter spesialis mata. Pemeriksaan ulang dalam 6 bulan.',
+                // Tambahan untuk kompatibilitas dengan Flask API terbaru
+                'No DR': 'Lakukan pemeriksaan rutin setiap tahun.',
+                'Mild': 'Kontrol gula darah dan tekanan darah. Pemeriksaan ulang dalam 9-12 bulan.',
+                'Moderate': 'Konsultasi dengan dokter spesialis mata. Pemeriksaan ulang dalam 6 bulan.',
+                'Severe': 'Rujukan segera ke dokter spesialis mata. Pemeriksaan ulang dalam 2-3 bulan.',
+                'Proliferative DR': 'Rujukan segera ke dokter spesialis mata untuk evaluasi dan kemungkinan tindakan laser atau operasi.'
+              };
+              
+              predictionResult.recommendation = recommendationMapping[predictionResult.severity] || 'Konsultasikan dengan dokter mata.';
+            }
           } catch (error) {
             lastError = error;
             retries--;
@@ -205,14 +269,21 @@ export const uploadImage = async (req, res, next) => {
         if (flaskError.response) {
           console.error('Response status:', flaskError.response.status);
           console.error('Response data:', flaskError.response.data);
+        } else if (flaskError.request) {
+          console.error('Tidak ada respons dari server Flask API');
+        } else {
+          console.error('Error saat menyiapkan request:', flaskError.message);
         }
         
         // Gunakan data mock untuk fallback
         console.log('Menggunakan data mock untuk testing...');
         predictionResult = {
-          severity: 'Sedang',
+          severity: 'DR Sedang',
           severity_level: 2,
           confidence: 0.85,
+          frontendSeverity: 'Sedang',
+          frontendSeverityLevel: 2,
+          recommendation: 'Konsultasi dengan dokter spesialis mata. Pemeriksaan ulang dalam 6 bulan.',
           raw_prediction: {
             is_simulation: true
           }
@@ -224,9 +295,12 @@ export const uploadImage = async (req, res, next) => {
       // Jika Flask API tidak tersedia, gunakan data mock
       console.log('Flask API tidak tersedia, menggunakan data mock...');
       predictionResult = {
-        severity: 'Sedang',
+        severity: 'DR Sedang',
         severity_level: 2,
         confidence: 0.85,
+        frontendSeverity: 'Sedang',
+        frontendSeverityLevel: 2,
+        recommendation: 'Konsultasi dengan dokter spesialis mata. Pemeriksaan ulang dalam 6 bulan.',
         raw_prediction: {
           is_simulation: true
         }
@@ -249,11 +323,12 @@ export const uploadImage = async (req, res, next) => {
         imagePath: relativePath, // Simpan path juga sebagai backup
         imageData: imageBase64, // Simpan data gambar base64 ke database
         originalFilename: req.file.originalname,
-        severity: predictionResult.severity,
-        severityLevel: predictionResult.severity_level || 0,
+        severity: predictionResult.frontendSeverity || predictionResult.severity,
+        severityLevel: predictionResult.frontendSeverityLevel || predictionResult.severity_level || 0,
         confidence: predictionResult.confidence || 0,
         isSimulation: isSimulation,
-        flaskApiUsed: apiUrlUsed
+        flaskApiUsed: apiUrlUsed,
+        notes: predictionResult.recommendation || ''
       });
 
       await analysis.save();
@@ -263,8 +338,10 @@ export const uploadImage = async (req, res, next) => {
       res.json({
         message: 'Analisis berhasil',
         prediction: {
-          severity: predictionResult.severity,
+          severity: predictionResult.frontendSeverity || predictionResult.severity,
+          severityLevel: predictionResult.frontendSeverityLevel || predictionResult.severity_level || 0,
           confidence: predictionResult.confidence,
+          recommendation: predictionResult.recommendation || '',
           analysisId: analysis._id,
           patientId: analysis.patientId,
           imageData: imageBase64, // Kirim image data langsung ke client
