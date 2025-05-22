@@ -10,8 +10,14 @@ import { dirname } from 'path';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const FLASK_API_URL = process.env.FLASK_API_URL ? `${process.env.FLASK_API_URL}/predict` : 'http://localhost:5001/predict';
-const FLASK_API_INFO_URL = process.env.FLASK_API_URL ? `${process.env.FLASK_API_URL}/info` : 'http://localhost:5001/info';
+// Gunakan environment variable FLASK_API_URL yang sudah diatur di Render
+const FLASK_API_BASE_URL = process.env.FLASK_API_URL || 'http://localhost:5001';
+const FLASK_API_URL = `${FLASK_API_BASE_URL}/predict`;
+const FLASK_API_INFO_URL = `${FLASK_API_BASE_URL}/info`;
+
+console.log(`Flask API Base URL: ${FLASK_API_BASE_URL}`);
+console.log(`Flask API Predict URL: ${FLASK_API_URL}`);
+console.log(`Flask API Info URL: ${FLASK_API_INFO_URL}`);
 
 // Periksa status Flask API
 let flaskApiStatus = {
@@ -25,6 +31,7 @@ let flaskApiStatus = {
 const checkFlaskApiStatus = async () => {
   if (!flaskApiStatus.checked || Date.now() - flaskApiStatus.lastCheck > 60000) { // Periksa setiap 1 menit
     try {
+      console.log(`Memeriksa status Flask API di: ${FLASK_API_INFO_URL}`);
       const response = await axios.get(FLASK_API_INFO_URL, {
         timeout: 5000
       });
@@ -34,6 +41,7 @@ const checkFlaskApiStatus = async () => {
       console.log('Mode simulasi:', flaskApiStatus.info.simulation_mode ? 'Ya' : 'Tidak');
     } catch (error) {
       console.error('Flask API tidak tersedia:', error.message);
+      console.error('URL yang dicoba:', FLASK_API_INFO_URL);
       flaskApiStatus.available = false;
       flaskApiStatus.info = null;
     }
@@ -43,9 +51,75 @@ const checkFlaskApiStatus = async () => {
   return flaskApiStatus.available;
 };
 
-// Periksa status awal
-checkFlaskApiStatus().then(() => {
-  console.log('Status awal Flask API:', flaskApiStatus.available ? 'Tersedia' : 'Tidak tersedia');
+// Fungsi untuk menguji koneksi ke Flask API secara menyeluruh
+async function testFlaskApiConnection() {
+  try {
+    console.log('Menguji koneksi ke Flask API...');
+    console.log(`URL yang diuji: ${FLASK_API_INFO_URL}`);
+    
+    const startTime = Date.now();
+    const response = await axios.get(FLASK_API_INFO_URL, {
+      timeout: 10000
+    });
+    const endTime = Date.now();
+    
+    console.log(`Koneksi berhasil. Waktu respons: ${endTime - startTime}ms`);
+    console.log('Detail Flask API:');
+    console.log(`- Status: ${response.status}`);
+    console.log(`- Model: ${response.data.model_name || 'Tidak diketahui'}`);
+    console.log(`- Mode Simulasi: ${response.data.simulation_mode ? 'Ya' : 'Tidak'}`);
+    console.log(`- Versi TensorFlow: ${response.data.tf_version || 'Tidak diketahui'}`);
+    
+    return {
+      success: true,
+      responseTime: endTime - startTime,
+      data: response.data
+    };
+  } catch (error) {
+    console.error('Koneksi ke Flask API gagal:');
+    console.error(`- Error: ${error.message}`);
+    if (error.code) console.error(`- Kode Error: ${error.code}`);
+    if (error.response) {
+      console.error(`- Status: ${error.response.status}`);
+      console.error(`- Data: ${JSON.stringify(error.response.data)}`);
+    }
+    return {
+      success: false,
+      error: error.message,
+      code: error.code,
+      response: error.response ? {
+        status: error.response.status,
+        data: error.response.data
+      } : null
+    };
+  }
+}
+
+// Periksa status awal dengan test menyeluruh
+testFlaskApiConnection().then(result => {
+  console.log('Hasil pengujian koneksi awal Flask API:', result.success ? 'Berhasil' : 'Gagal');
+  if (!result.success) {
+    console.log('Mencoba fallback ke localhost...');
+    // Coba gunakan localhost sebagai fallback
+    const originalUrl = FLASK_API_BASE_URL;
+    // Temporarily set to localhost for testing
+    global.FLASK_API_BASE_URL_TEMP = 'http://localhost:5001';
+    const tempInfoUrl = `${global.FLASK_API_BASE_URL_TEMP}/info`;
+    
+    axios.get(tempInfoUrl, { timeout: 5000 })
+      .then(response => {
+        console.log('Koneksi ke localhost berhasil!');
+        console.log('Pertimbangkan untuk menggunakan URL ini jika deployment mengalami masalah.');
+      })
+      .catch(err => {
+        console.log('Koneksi ke localhost juga gagal.');
+        console.log('Pastikan Flask service berjalan di salah satu URL.');
+      })
+      .finally(() => {
+        // Clean up
+        delete global.FLASK_API_BASE_URL_TEMP;
+      });
+  }
 });
 
 export const uploadImage = async (req, res, next) => {
@@ -67,9 +141,13 @@ export const uploadImage = async (req, res, next) => {
     const relativePath = path.relative(path.join(__dirname, '..'), req.file.path).replace(/\\/g, '/');
     
     // Periksa apakah Flask API tersedia
+    console.log('Memeriksa ketersediaan Flask API...');
     const apiAvailable = await checkFlaskApiStatus();
+    console.log('Status Flask API:', apiAvailable ? 'Tersedia' : 'Tidak tersedia');
     
     let predictionResult;
+    let isSimulation = false;
+    let apiUrlUsed = null;
     
     // Jika Flask API tersedia, kirim gambar untuk analisis
     if (apiAvailable) {
@@ -79,27 +157,55 @@ export const uploadImage = async (req, res, next) => {
         const fileStream = fs.createReadStream(req.file.path);
         formData.append('file', fileStream);
 
-        console.log('Mengirim request ke Flask API...');
-        // Kirim request ke Flask API
-        const response = await axios.post(FLASK_API_URL, formData, {
-          headers: {
-            ...formData.getHeaders(),
-          },
-          maxContentLength: Infinity,
-          maxBodyLength: Infinity,
-          timeout: 30000 // 30 detik timeout
-        });
-
-        // Ambil hasil prediksi
-        predictionResult = response.data;
-        console.log('Hasil prediksi dari Flask API:', predictionResult);
+        console.log(`Mengirim request ke Flask API di: ${FLASK_API_URL}`);
+        apiUrlUsed = FLASK_API_URL;
         
-        // Tampilkan peringatan jika menggunakan mode simulasi
-        if (predictionResult.raw_prediction && predictionResult.raw_prediction.is_simulation) {
-          console.warn('PERHATIAN: Menggunakan hasil simulasi dari Flask API, bukan prediksi model yang sebenarnya');
+        // Kirim request ke Flask API dengan retry logic sederhana
+        let retries = 3;
+        let success = false;
+        let lastError = null;
+        
+        while (retries > 0 && !success) {
+          try {
+            // Kirim request ke Flask API
+            const response = await axios.post(FLASK_API_URL, formData, {
+              headers: {
+                ...formData.getHeaders(),
+              },
+              maxContentLength: Infinity,
+              maxBodyLength: Infinity,
+              timeout: 30000 // 30 detik timeout
+            });
+            
+            // Ambil hasil prediksi
+            predictionResult = response.data;
+            console.log('Hasil prediksi dari Flask API:', predictionResult);
+            success = true;
+            
+            // Tampilkan peringatan jika menggunakan mode simulasi
+            if (predictionResult.raw_prediction && predictionResult.raw_prediction.is_simulation) {
+              console.warn('PERHATIAN: Menggunakan hasil simulasi dari Flask API, bukan prediksi model yang sebenarnya');
+              isSimulation = true;
+            }
+          } catch (error) {
+            lastError = error;
+            retries--;
+            if (retries > 0) {
+              console.log(`Error, mencoba kembali (${retries} percobaan tersisa)...`);
+              await new Promise(resolve => setTimeout(resolve, 1000)); // Tunggu 1 detik sebelum mencoba lagi
+            }
+          }
+        }
+        
+        if (!success) {
+          throw lastError || new Error('Gagal menghubungi Flask API setelah beberapa percobaan');
         }
       } catch (flaskError) {
         console.error('Error saat menghubungi Flask API:', flaskError.message);
+        if (flaskError.response) {
+          console.error('Response status:', flaskError.response.status);
+          console.error('Response data:', flaskError.response.data);
+        }
         
         // Gunakan data mock untuk fallback
         console.log('Menggunakan data mock untuk testing...');
@@ -111,6 +217,8 @@ export const uploadImage = async (req, res, next) => {
             is_simulation: true
           }
         };
+        isSimulation = true;
+        apiUrlUsed = 'mock-data';
       }
     } else {
       // Jika Flask API tidak tersedia, gunakan data mock
@@ -123,6 +231,8 @@ export const uploadImage = async (req, res, next) => {
           is_simulation: true
         }
       };
+      isSimulation = true;
+      apiUrlUsed = 'mock-data';
     }
 
     // Simpan hasil analisis ke database dengan path relatif dan image data
@@ -141,7 +251,9 @@ export const uploadImage = async (req, res, next) => {
         originalFilename: req.file.originalname,
         severity: predictionResult.severity,
         severityLevel: predictionResult.severity_level || 0,
-        confidence: predictionResult.confidence || 0
+        confidence: predictionResult.confidence || 0,
+        isSimulation: isSimulation,
+        flaskApiUsed: apiUrlUsed
       });
 
       await analysis.save();
@@ -156,7 +268,8 @@ export const uploadImage = async (req, res, next) => {
           analysisId: analysis._id,
           patientId: analysis.patientId,
           imageData: imageBase64, // Kirim image data langsung ke client
-          isSimulation: predictionResult.raw_prediction && predictionResult.raw_prediction.is_simulation
+          isSimulation: isSimulation,
+          flaskApiUrl: apiUrlUsed
         }
       });
 
@@ -279,14 +392,30 @@ export const getAnalysisById = async (req, res, next) => {
   }
 };
 
-// Endpoint untuk mendapatkan status Flask API
+// Endpoint untuk mendapatkan status Flask API dengan detail lebih lengkap
 export const getFlaskApiStatus = async (req, res) => {
   try {
+    console.log('Memeriksa status Flask API dari endpoint API...');
+    
+    // Dapatkan status dasar dari cache
     const apiAvailable = await checkFlaskApiStatus();
+    
+    // Jika diminta tes menyeluruh, lakukan tes tambahan
+    const fullTest = req.query.fullTest === 'true';
+    let detailedResult = null;
+    
+    if (fullTest) {
+      console.log('Melakukan pengujian menyeluruh...');
+      detailedResult = await testFlaskApiConnection();
+    }
+    
     res.json({
       available: apiAvailable,
       lastCheck: flaskApiStatus.lastCheck,
-      info: flaskApiStatus.info
+      info: flaskApiStatus.info,
+      apiUrl: FLASK_API_URL,
+      infoUrl: FLASK_API_INFO_URL,
+      detailedTest: fullTest ? detailedResult : null
     });
   } catch (error) {
     console.error('Error saat memeriksa status Flask API:', error);
@@ -372,3 +501,105 @@ export const deleteAnalysis = async (req, res) => {
     res.status(500).json({ message: 'Error deleting analysis' });
   }
 };
+
+// Endpoint untuk pengujian koneksi Flask API secara menyeluruh
+export const testFlaskConnection = async (req, res) => {
+  try {
+    console.log('Menjalankan pengujian menyeluruh untuk Flask API...');
+    
+    // Uji koneksi ke URL Flask API utama
+    const mainTest = await testFlaskApiConnection();
+    
+    // Jika koneksi utama gagal, coba ke localhost sebagai perbandingan
+    let localhostTest = null;
+    if (!mainTest.success) {
+      console.log('Koneksi ke URL utama gagal, mencoba localhost...');
+      // Simpan URL asli
+      const originalBaseUrl = FLASK_API_BASE_URL;
+      const originalInfoUrl = FLASK_API_INFO_URL;
+      
+      // Ganti dengan localhost untuk testing
+      const localBaseUrl = 'http://localhost:5001';
+      const localInfoUrl = `${localBaseUrl}/info`;
+      
+      try {
+        const response = await axios.get(localInfoUrl, { timeout: 5000 });
+        localhostTest = {
+          success: true,
+          url: localInfoUrl,
+          data: response.data,
+          responseTime: 0 // Tidak menghitung waktu respons untuk simplikasi
+        };
+      } catch (error) {
+        localhostTest = {
+          success: false,
+          url: localInfoUrl,
+          error: error.message,
+          code: error.code
+        };
+      }
+    }
+    
+    // Hasil pengujian
+    res.json({
+      mainConnection: {
+        url: FLASK_API_INFO_URL,
+        success: mainTest.success,
+        responseTime: mainTest.responseTime,
+        data: mainTest.data,
+        error: mainTest.error
+      },
+      localhostConnection: localhostTest,
+      recommendations: generateRecommendations(mainTest, localhostTest),
+      environment: {
+        flaskApiBaseUrl: FLASK_API_BASE_URL,
+        flaskApiUrl: FLASK_API_URL,
+        flaskApiInfoUrl: FLASK_API_INFO_URL,
+        nodeEnv: process.env.NODE_ENV
+      }
+    });
+  } catch (error) {
+    console.error('Error saat melakukan pengujian Flask API:', error);
+    res.status(500).json({ 
+      message: 'Gagal melakukan pengujian Flask API', 
+      error: error.message 
+    });
+  }
+};
+
+// Fungsi helper untuk menghasilkan rekomendasi berdasarkan hasil pengujian
+function generateRecommendations(mainTest, localhostTest) {
+  const recommendations = [];
+  
+  if (mainTest.success) {
+    recommendations.push('Koneksi ke Flask API berhasil. Tidak diperlukan tindakan khusus.');
+    
+    if (mainTest.data && mainTest.data.simulation_mode) {
+      recommendations.push('Flask API berjalan dalam mode simulasi. Pertimbangkan untuk mengunggah model ML jika ingin menggunakan prediksi yang sebenarnya.');
+    }
+    
+    if (mainTest.responseTime > 2000) {
+      recommendations.push(`Waktu respons Flask API tinggi (${mainTest.responseTime}ms). Hal ini mungkin memengaruhi pengalaman pengguna. Pertimbangkan untuk mengoptimalkan deployment.`);
+    }
+  } else {
+    recommendations.push('Koneksi ke Flask API utama gagal.');
+    
+    if (mainTest.code === 'ECONNREFUSED') {
+      recommendations.push('Server Flask API tidak merespons. Pastikan layanan berjalan dan aksesibel.');
+    } else if (mainTest.code === 'ENOTFOUND') {
+      recommendations.push('Host Flask API tidak ditemukan. Periksa URL yang dikonfigurasi.');
+    } else if (mainTest.code === 'ETIMEDOUT') {
+      recommendations.push('Koneksi ke Flask API timeout. Server mungkin lambat atau tidak merespons.');
+    }
+    
+    if (localhostTest && localhostTest.success) {
+      recommendations.push('Koneksi ke localhost berhasil. Pertimbangkan untuk menggunakan localhost selama deployment Flask API sedang diperbaiki.');
+    } else if (localhostTest) {
+      recommendations.push('Koneksi ke localhost juga gagal. Pastikan Flask service berjalan di salah satu endpoint.');
+    }
+    
+    recommendations.push(`Periksa variabel lingkungan FLASK_API_URL (saat ini: ${FLASK_API_BASE_URL}). Pastikan URL benar dan dapat diakses.`);
+  }
+  
+  return recommendations;
+}

@@ -38,6 +38,16 @@ const retinaAnalysisSchema = new mongoose.Schema({
   notes: {
     type: String,
     default: ''
+  },
+  isSimulation: {
+    type: Boolean,
+    default: false,
+    description: 'Menandakan hasil dari mode simulasi Flask API atau data mock'
+  },
+  flaskApiUsed: {
+    type: String,
+    required: false,
+    description: 'URL Flask API yang digunakan saat analisis'
   }
 }, { timestamps: true });
 
