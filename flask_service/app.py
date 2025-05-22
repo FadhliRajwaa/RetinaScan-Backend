@@ -16,41 +16,40 @@ print(f"TensorFlow version: {tf.__version__}")
 app = Flask(__name__)
 CORS(app)
 
-# Konfigurasi path model
-MODEL_PATH = '../models/model.h5'
+# Konfigurasi path model - gunakan path absolut untuk memastikan model ditemukan
+current_dir = os.path.dirname(os.path.abspath(__file__))
+MODEL_PATH = os.path.join(current_dir, 'model-Retinopati.h5')
 
 # Pesan info awal
 print(f"Flask API untuk RetinaScan (TensorFlow {tf.__version__})")
-print(f"Mencari model di: {os.path.abspath(MODEL_PATH)}")
+print(f"Mencari model di: {MODEL_PATH}")
 
 # Pastikan model dapat dimuat
 try:
-    model = load_model(MODEL_PATH)
-    model.summary()  # Menampilkan ringkasan model
-    print("Model berhasil dimuat!")
+    if not os.path.exists(MODEL_PATH):
+        print(f"File model tidak ditemukan di: {MODEL_PATH}")
+        model = None
+    else:
+        model = load_model(MODEL_PATH)
+        model.summary()  # Menampilkan ringkasan model
+        print("Model berhasil dimuat!")
 except Exception as e:
     print(f"Gagal memuat model: {e}")
     print("Menggunakan mode simulasi...")
     # Tetap jalankan aplikasi dalam mode simulasi
     model = None
 
-# Kelas output model
-CLASSES = ['No DR', 'Mild DR', 'Moderate DR', 'Severe DR', 'Proliferative DR']
+# Kelas output model (disesuaikan dengan model yang memiliki 2 kelas)
+CLASSES = ['Normal', 'Diabetic Retinopathy']
 # Mapping output ke bahasa Indonesia
 SEVERITY_MAPPING = {
-    'No DR': 'Tidak ada',
-    'Mild DR': 'Ringan',
-    'Moderate DR': 'Sedang',
-    'Severe DR': 'Parah',
-    'Proliferative DR': 'Proliferatif'
+    'Normal': 'Tidak ada',
+    'Diabetic Retinopathy': 'Ada'
 }
 # Mapping tingkat keparahan
 SEVERITY_LEVEL_MAPPING = {
-    'No DR': 0,
-    'Mild DR': 1,
-    'Moderate DR': 2,
-    'Severe DR': 3,
-    'Proliferative DR': 4
+    'Normal': 0,
+    'Diabetic Retinopathy': 1
 }
 
 def preprocess_image(img_bytes):
@@ -140,7 +139,7 @@ def predict():
         
         # Pilih kelas secara acak dengan bias ke kelas tertentu (untuk simulasi)
         import random
-        weights = [0.4, 0.3, 0.2, 0.07, 0.03]  # Lebih sering menghasilkan kelas awal
+        weights = [0.6, 0.4]  # Lebih sering menghasilkan kelas normal
         predicted_class_index = random.choices(range(len(CLASSES)), weights=weights)[0]
         predicted_class = CLASSES[predicted_class_index]
         
@@ -161,10 +160,7 @@ def predict():
                 'class': predicted_class,
                 'probabilities': {
                     CLASSES[0]: round(random.random() * 0.1, 3),
-                    CLASSES[1]: round(random.random() * 0.1, 3),
-                    CLASSES[2]: round(random.random() * 0.1, 3),
-                    CLASSES[3]: round(random.random() * 0.1, 3),
-                    CLASSES[4]: round(random.random() * 0.1, 3)
+                    CLASSES[1]: round(random.random() * 0.1, 3)
                 },
                 'is_simulation': True
             }
@@ -191,7 +187,8 @@ def model_info():
             'classes': CLASSES,
             'severity_mapping': SEVERITY_MAPPING,
             'tf_version': tf.__version__,
-            'simulation_mode': model is None
+            'simulation_mode': model is None,
+            'model_path': MODEL_PATH
         }
         
         if model is not None:
@@ -201,7 +198,7 @@ def model_info():
             info_data['model_summary'] = '\n'.join(model_summary)
         else:
             info_data['model_summary'] = 'Model tidak tersedia (mode simulasi)'
-            info_data['note'] = 'API berjalan dalam mode simulasi. Untuk menggunakan model yang sebenarnya, pastikan file model.h5 tersedia.'
+            info_data['note'] = 'API berjalan dalam mode simulasi. Untuk menggunakan model yang sebenarnya, pastikan file model-Retinopati.h5 tersedia.'
             
         return jsonify(info_data)
     
