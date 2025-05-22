@@ -130,9 +130,6 @@ export const uploadImage = async (req, res, next) => {
     console.log('File diterima:', req.file);
     console.log('ID Pasien:', req.body.patientId);
     
-    // Inisialisasi variabel untuk API URL yang akan digunakan
-    let apiUrlUsed = null;
-    
     // Pastikan direktori uploads ada
     const uploadsDir = path.join(__dirname, '..', 'uploads');
     if (!fs.existsSync(uploadsDir)) {
@@ -143,106 +140,14 @@ export const uploadImage = async (req, res, next) => {
     // Simpan path relatif untuk database
     const relativePath = path.relative(path.join(__dirname, '..'), req.file.path).replace(/\\/g, '/');
     
-    // Periksa apakah Flask API tersedia dengan health check
-    console.log('Melakukan health check pada Flask API...');
-    let apiAvailable = false;
-    let healthCheckRetries = 3;
-    
-    while (healthCheckRetries > 0 && !apiAvailable) {
-      try {
-        const healthResponse = await axios.get(FLASK_API_INFO_URL, {
-          timeout: 10000 // 10 detik timeout untuk health check
-        });
-        
-        if (healthResponse.status === 200) {
-          console.log('Health check berhasil, Flask API tersedia');
-          console.log('Info model:', healthResponse.data.model_name);
-          console.log('Mode simulasi:', healthResponse.data.simulation_mode ? 'Ya' : 'Tidak');
-          apiAvailable = true;
-          flaskApiStatus.available = true;
-          flaskApiStatus.info = healthResponse.data;
-          flaskApiStatus.checked = true;
-          flaskApiStatus.lastCheck = Date.now();
-        } else {
-          console.log(`Health check gagal dengan status: ${healthResponse.status}`);
-          healthCheckRetries--;
-          if (healthCheckRetries > 0) {
-            console.log(`Menunggu sebelum mencoba health check kembali (${healthCheckRetries} percobaan tersisa)...`);
-            await new Promise(resolve => setTimeout(resolve, 2000)); // Tunggu 2 detik
-          }
-        }
-      } catch (error) {
-        console.error('Health check error:', error.message);
-        healthCheckRetries--;
-        if (healthCheckRetries > 0) {
-          console.log(`Menunggu sebelum mencoba health check kembali (${healthCheckRetries} percobaan tersisa)...`);
-          await new Promise(resolve => setTimeout(resolve, 2000)); // Tunggu 2 detik
-        }
-      }
-    }
-    
-    // Jika health check gagal, gunakan status Flask API terakhir
-    if (!apiAvailable) {
-      console.log('Health check gagal, memeriksa status Flask API terakhir...');
-      apiAvailable = await checkFlaskApiStatus();
-      
-      // Jika masih tidak tersedia, coba URL alternatif
-      if (!apiAvailable) {
-        console.log('Mencoba URL alternatif Flask API...');
-        
-        // Simpan URL asli
-        const originalBaseUrl = FLASK_API_BASE_URL;
-        const originalApiUrl = FLASK_API_URL;
-        const originalInfoUrl = FLASK_API_INFO_URL;
-        
-        // Coba beberapa URL alternatif
-        const alternativeUrls = [
-          'https://flask-service-1qmz.onrender.com',
-          'https://flask-retinascan.onrender.com',
-          'http://localhost:5001'
-        ];
-        
-        for (const altBaseUrl of alternativeUrls) {
-          if (altBaseUrl === originalBaseUrl) continue; // Lewati jika sama dengan URL asli
-          
-          const altApiUrl = `${altBaseUrl}/predict`;
-          const altInfoUrl = `${altBaseUrl}/info`;
-          
-          console.log(`Mencoba alternatif URL: ${altInfoUrl}`);
-          
-          try {
-            const altResponse = await axios.get(altInfoUrl, { timeout: 10000 });
-            
-            if (altResponse.status === 200) {
-              console.log(`Berhasil terhubung ke URL alternatif: ${altBaseUrl}`);
-              console.log('Info model:', altResponse.data.model_name);
-              
-              // Gunakan URL alternatif ini untuk request
-              console.log(`Menggunakan URL alternatif untuk prediksi: ${altApiUrl}`);
-              apiAvailable = true;
-              apiUrlUsed = altApiUrl;
-              
-              // Update status Flask API
-              flaskApiStatus.available = true;
-              flaskApiStatus.info = altResponse.data;
-              flaskApiStatus.checked = true;
-              flaskApiStatus.lastCheck = Date.now();
-              
-              break; // Keluar dari loop jika berhasil
-            }
-          } catch (error) {
-            console.log(`Gagal terhubung ke URL alternatif ${altBaseUrl}: ${error.message}`);
-          }
-        }
-      }
-    }
-    
+    // Periksa apakah Flask API tersedia
+    console.log('Memeriksa ketersediaan Flask API...');
+    const apiAvailable = await checkFlaskApiStatus();
     console.log('Status Flask API:', apiAvailable ? 'Tersedia' : 'Tidak tersedia');
     
     let predictionResult;
     let isSimulation = false;
-    // Pastikan apiUrlUsed jika belum diset, gunakan default
-    apiUrlUsed = apiUrlUsed || FLASK_API_URL; 
+    let apiUrlUsed = null;
     
     // Jika Flask API tersedia, kirim gambar untuk analisis
     if (apiAvailable) {
@@ -252,7 +157,8 @@ export const uploadImage = async (req, res, next) => {
         const fileStream = fs.createReadStream(req.file.path);
         formData.append('file', fileStream);
 
-        console.log(`Mengirim request ke Flask API di: ${apiUrlUsed}`);
+        console.log(`Mengirim request ke Flask API di: ${FLASK_API_URL}`);
+        apiUrlUsed = FLASK_API_URL;
         
         // Kirim request ke Flask API dengan retry logic sederhana
         let retries = 3;
@@ -262,15 +168,13 @@ export const uploadImage = async (req, res, next) => {
         while (retries > 0 && !success) {
           try {
             // Kirim request ke Flask API
-            console.log(`Mencoba menghubungi Flask API, percobaan ke-${4-retries}`);
-            
-            const response = await axios.post(apiUrlUsed, formData, {
+            const response = await axios.post(FLASK_API_URL, formData, {
               headers: {
                 ...formData.getHeaders(),
               },
               maxContentLength: Infinity,
               maxBodyLength: Infinity,
-              timeout: 60000 // Meningkatkan timeout menjadi 60 detik
+              timeout: 30000 // 30 detik timeout
             });
             
             // Ambil hasil prediksi
@@ -350,19 +254,9 @@ export const uploadImage = async (req, res, next) => {
           } catch (error) {
             lastError = error;
             retries--;
-            
-            // Implementasi exponential backoff
-            const waitTime = Math.pow(2, 4 - retries) * 1000; // 2, 4, 8 detik
-            console.log(`Error menghubungi Flask API: ${error.message}`);
-            
-            if (error.response) {
-              console.log(`Status error: ${error.response.status}`);
-              console.log(`Data error: ${JSON.stringify(error.response.data)}`);
-            }
-            
             if (retries > 0) {
-              console.log(`Menunggu ${waitTime/1000} detik sebelum mencoba lagi (${retries} percobaan tersisa)...`);
-              await new Promise(resolve => setTimeout(resolve, waitTime));
+              console.log(`Error, mencoba kembali (${retries} percobaan tersisa)...`);
+              await new Promise(resolve => setTimeout(resolve, 1000)); // Tunggu 1 detik sebelum mencoba lagi
             }
           }
         }
@@ -398,22 +292,8 @@ export const uploadImage = async (req, res, next) => {
         apiUrlUsed = 'mock-data';
       }
     } else {
-      // Jika Flask API tidak tersedia, gunakan data mock dan berikan petunjuk
+      // Jika Flask API tidak tersedia, gunakan data mock
       console.log('Flask API tidak tersedia, menggunakan data mock...');
-      console.log('PERHATIAN: Layanan Flask API tidak tersedia saat ini. Berikut adalah kemungkinan penyebab dan solusi:');
-      console.log('1. Server Flask API di Render mungkin sedang down atau mengalami masalah.');
-      console.log('2. Jika Anda menggunakan free tier di Render, mungkin ada batasan resource atau app di-suspend karena tidak aktif.');
-      console.log('3. Model machine learning mungkin memerlukan waktu lebih lama untuk load pada cold start.');
-      console.log('');
-      console.log('Rekomendasi:');
-      console.log('1. Periksa status Flask API service di dashboard Render');
-      console.log('2. Jika menggunakan free tier, coba upgrade ke paid tier untuk uptime yang lebih baik');
-      console.log('3. Jika perlu, deploy Flask API secara lokal dengan menjalankan perintah berikut di direktori flask_service:');
-      console.log('   pip install -r requirements.txt');
-      console.log('   python app.py');
-      console.log('4. Setelah Flask API lokal berjalan, backend akan otomatis mencoba terhubung ke URL http://localhost:5001');
-      console.log('');
-      
       predictionResult = {
         severity: 'DR Sedang',
         severity_level: 2,
