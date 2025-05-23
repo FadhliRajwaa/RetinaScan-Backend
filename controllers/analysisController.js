@@ -72,7 +72,21 @@ const checkFlaskApiStatus = async () => {
       
       if (error.response) {
         console.error('Response status:', error.response.status);
-        console.error('Response data:', error.response.data);
+        // Batasi output data untuk menghindari teks random yang panjang
+        const responseData = error.response.data;
+        let truncatedData;
+        
+        if (typeof responseData === 'string') {
+          truncatedData = responseData.length > 100 
+            ? responseData.substring(0, 100) + '... [truncated]' 
+            : responseData;
+        } else if (responseData && typeof responseData === 'object') {
+          truncatedData = '[Object data]';
+        } else {
+          truncatedData = responseData;
+        }
+        
+        console.error('Response data:', truncatedData);
       } else if (error.request) {
         console.error('Tidak ada respons dari server Flask API');
       }
@@ -138,7 +152,21 @@ async function testFlaskApiConnection() {
     if (error.code) console.error(`- Kode Error: ${error.code}`);
     if (error.response) {
       console.error(`- Status: ${error.response.status}`);
-      console.error(`- Data: ${JSON.stringify(error.response.data)}`);
+      // Batasi output data untuk menghindari teks random yang panjang
+      const responseData = error.response.data;
+      let truncatedData;
+      
+      if (typeof responseData === 'string') {
+        truncatedData = responseData.length > 100 
+          ? responseData.substring(0, 100) + '... [truncated]' 
+          : responseData;
+      } else if (responseData && typeof responseData === 'object') {
+        truncatedData = '[Object data]';
+      } else {
+        truncatedData = responseData;
+      }
+      
+      console.error(`- Data: ${truncatedData}`);
     }
     return {
       success: false,
@@ -239,7 +267,11 @@ export const uploadImage = async (req, res, next) => {
             
             // Ambil hasil prediksi
             predictionResult = response.data;
-            console.log('Hasil prediksi dari Flask API:', predictionResult);
+            // Tampilkan hasil prediksi dengan format yang lebih ringkas
+            console.log('Hasil prediksi dari Flask API:', 
+              typeof predictionResult === 'object' 
+                ? `{severity: ${predictionResult.severity}, confidence: ${predictionResult.confidence}}` 
+                : predictionResult);
             success = true;
             
             // Tampilkan peringatan jika menggunakan mode simulasi
@@ -347,7 +379,21 @@ export const uploadImage = async (req, res, next) => {
         console.error('Error saat menghubungi Flask API:', flaskError.message);
         if (flaskError.response) {
           console.error('Response status:', flaskError.response.status);
-          console.error('Response data:', flaskError.response.data);
+          // Batasi output data untuk menghindari teks random yang panjang
+          const responseData = flaskError.response.data;
+          let truncatedData;
+          
+          if (typeof responseData === 'string') {
+            truncatedData = responseData.length > 100 
+              ? responseData.substring(0, 100) + '... [truncated]' 
+              : responseData;
+          } else if (responseData && typeof responseData === 'object') {
+            truncatedData = '[Object data]';
+          } else {
+            truncatedData = responseData;
+          }
+          
+          console.error('Response data:', truncatedData);
         } else if (flaskError.request) {
           console.error('Tidak ada respons dari server Flask API');
         } else {
