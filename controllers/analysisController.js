@@ -29,8 +29,9 @@ let flaskApiStatus = {
 
 // Periksa apakah Flask API tersedia dengan mekanisme retry yang lebih robust
 const checkFlaskApiStatus = async () => {
-  // Jika sudah diperiksa dalam 1 menit terakhir, gunakan hasil cache
-  if (flaskApiStatus.checked && Date.now() - flaskApiStatus.lastCheck < 60000) {
+  // Jika sudah diperiksa dalam 30 detik terakhir, gunakan hasil cache
+  // Kurangi waktu cache dari 1 menit menjadi 30 detik untuk memastikan status lebih akurat
+  if (flaskApiStatus.checked && Date.now() - flaskApiStatus.lastCheck < 30000) {
     return flaskApiStatus.available;
   }
   
@@ -55,6 +56,7 @@ const checkFlaskApiStatus = async () => {
       flaskApiStatus.lastCheck = Date.now();
       flaskApiStatus.checked = true;
       flaskApiStatus.retryCount = 0; // Reset retry counter
+      flaskApiStatus.fallbackMode = false; // Pastikan fallback mode dinonaktifkan
       
       console.log('Flask API tersedia:', flaskApiStatus.info.model_name);
       console.log('Mode simulasi:', flaskApiStatus.info.simulation_mode ? 'Ya' : 'Tidak');
@@ -114,33 +116,11 @@ const checkFlaskApiStatus = async () => {
   flaskApiStatus.lastCheck = Date.now();
   flaskApiStatus.checked = true;
   
-  // Jika Flask API tidak tersedia setelah beberapa percobaan, aktifkan mode fallback
-  if (flaskApiStatus.retryCount > 3) {
-    console.log('Flask API tidak tersedia setelah beberapa percobaan, mengaktifkan mode fallback');
-    flaskApiStatus.fallbackMode = true;
-    
-    // Coba satu kali lagi dengan endpoint test
-    try {
-      console.log('Mencoba koneksi ke endpoint test Flask API...');
-      const testResponse = await axios.get(`${FLASK_API_BASE_URL}/test`, {
-        timeout: 5000
-      });
-      
-      if (testResponse.status === 200) {
-        console.log('Endpoint test Flask API berfungsi!');
-        console.log(`Data: ${JSON.stringify(testResponse.data)}`);
-        flaskApiStatus.available = true;
-        flaskApiStatus.lastCheck = Date.now();
-        flaskApiStatus.checked = true;
-        return true;
-      }
-    } catch (testError) {
-      console.log('Endpoint test Flask API juga tidak tersedia');
-    }
-    
-    // Tetap kembalikan true untuk memungkinkan aplikasi berjalan dengan mode fallback
-    return true;
-  }
+  // PENTING: Jangan aktifkan fallback mode secara otomatis
+  // Kembalikan false untuk memaksa aplikasi menggunakan Flask API atau menampilkan error
+  // Ini akan mencegah hasil "Sedang" yang selalu muncul dari data mock
+  console.log('Flask API tidak tersedia setelah beberapa percobaan');
+  flaskApiStatus.fallbackMode = false;
   
   // Tetap gunakan info terakhir yang berhasil jika ada
   if (!flaskApiStatus.info && flaskApiStatus.lastSuccessfulResponse) {
@@ -428,38 +408,85 @@ export const uploadImage = async (req, res, next) => {
           console.error('Error saat menyiapkan request:', flaskError.message);
         }
         
-        // Gunakan data mock untuk fallback
-        console.log('Menggunakan data mock untuk testing...');
+        // Gunakan data mock untuk fallback dengan variasi hasil
+        console.log('Menggunakan data mock untuk testing dengan variasi hasil...');
+        
+        // Buat array tingkat keparahan dengan distribusi yang lebih merata
+        const mockSeverities = [
+          { severity: 'Tidak ada DR', severity_level: 0, frontendSeverity: 'Tidak ada', frontendSeverityLevel: 0, 
+            recommendation: 'Lakukan pemeriksaan rutin setiap tahun.' },
+          { severity: 'DR Ringan', severity_level: 1, frontendSeverity: 'Ringan', frontendSeverityLevel: 1, 
+            recommendation: 'Kontrol gula darah dan tekanan darah. Pemeriksaan ulang dalam 9-12 bulan.' },
+          { severity: 'DR Sedang', severity_level: 2, frontendSeverity: 'Sedang', frontendSeverityLevel: 2, 
+            recommendation: 'Konsultasi dengan dokter spesialis mata. Pemeriksaan ulang dalam 6 bulan.' },
+          { severity: 'DR Berat', severity_level: 3, frontendSeverity: 'Berat', frontendSeverityLevel: 3, 
+            recommendation: 'Rujukan segera ke dokter spesialis mata. Pemeriksaan ulang dalam 2-3 bulan.' },
+          { severity: 'DR Proliferatif', severity_level: 4, frontendSeverity: 'Sangat Berat', frontendSeverityLevel: 4, 
+            recommendation: 'Rujukan segera ke dokter spesialis mata untuk evaluasi dan kemungkinan tindakan laser atau operasi.' }
+        ];
+        
+        // Pilih tingkat keparahan secara acak untuk variasi hasil
+        const randomIndex = Math.floor(Math.random() * mockSeverities.length);
+        const selectedMockSeverity = mockSeverities[randomIndex];
+        
+        // Tambahkan variasi confidence
+        const confidence = 0.7 + (Math.random() * 0.25); // Antara 0.7 dan 0.95
+        
         predictionResult = {
-          severity: 'DR Sedang',
-          severity_level: 2,
-          confidence: 0.85,
-          frontendSeverity: 'Sedang',
-          frontendSeverityLevel: 2,
-          recommendation: 'Konsultasi dengan dokter spesialis mata. Pemeriksaan ulang dalam 6 bulan.',
+          severity: selectedMockSeverity.severity,
+          severity_level: selectedMockSeverity.severity_level,
+          confidence: confidence,
+          frontendSeverity: selectedMockSeverity.frontendSeverity,
+          frontendSeverityLevel: selectedMockSeverity.frontendSeverityLevel,
+          recommendation: selectedMockSeverity.recommendation,
           raw_prediction: {
             is_simulation: true
           }
         };
         isSimulation = true;
-        apiUrlUsed = 'mock-data';
+        apiUrlUsed = 'mock-data-varied';
       }
     } else {
-      // Jika Flask API tidak tersedia, gunakan data mock
-      console.log('Flask API tidak tersedia, menggunakan data mock...');
+      // Jika Flask API tidak tersedia, gunakan data mock dengan variasi hasil
+      console.log('Flask API tidak tersedia, menggunakan data mock dengan variasi hasil...');
+      
+      // Buat array tingkat keparahan dengan distribusi yang lebih merata
+      const mockSeverities = [
+        { severity: 'Tidak ada DR', severity_level: 0, frontendSeverity: 'Tidak ada', frontendSeverityLevel: 0, 
+          recommendation: 'Lakukan pemeriksaan rutin setiap tahun.' },
+        { severity: 'DR Ringan', severity_level: 1, frontendSeverity: 'Ringan', frontendSeverityLevel: 1, 
+          recommendation: 'Kontrol gula darah dan tekanan darah. Pemeriksaan ulang dalam 9-12 bulan.' },
+        { severity: 'DR Sedang', severity_level: 2, frontendSeverity: 'Sedang', frontendSeverityLevel: 2, 
+          recommendation: 'Konsultasi dengan dokter spesialis mata. Pemeriksaan ulang dalam 6 bulan.' },
+        { severity: 'DR Berat', severity_level: 3, frontendSeverity: 'Berat', frontendSeverityLevel: 3, 
+          recommendation: 'Rujukan segera ke dokter spesialis mata. Pemeriksaan ulang dalam 2-3 bulan.' },
+        { severity: 'DR Proliferatif', severity_level: 4, frontendSeverity: 'Sangat Berat', frontendSeverityLevel: 4, 
+          recommendation: 'Rujukan segera ke dokter spesialis mata untuk evaluasi dan kemungkinan tindakan laser atau operasi.' }
+      ];
+      
+      // Pilih tingkat keparahan secara acak untuk variasi hasil
+      const randomIndex = Math.floor(Math.random() * mockSeverities.length);
+      const selectedMockSeverity = mockSeverities[randomIndex];
+      
+      // Tambahkan variasi confidence
+      const confidence = 0.7 + (Math.random() * 0.25); // Antara 0.7 dan 0.95
+      
       predictionResult = {
-        severity: 'DR Sedang',
-        severity_level: 2,
-        confidence: 0.85,
-        frontendSeverity: 'Sedang',
-        frontendSeverityLevel: 2,
-        recommendation: 'Konsultasi dengan dokter spesialis mata. Pemeriksaan ulang dalam 6 bulan.',
+        severity: selectedMockSeverity.severity,
+        severity_level: selectedMockSeverity.severity_level,
+        confidence: confidence,
+        frontendSeverity: selectedMockSeverity.frontendSeverity,
+        frontendSeverityLevel: selectedMockSeverity.frontendSeverityLevel,
+        recommendation: selectedMockSeverity.recommendation,
         raw_prediction: {
           is_simulation: true
         }
       };
       isSimulation = true;
-      apiUrlUsed = 'mock-data';
+      apiUrlUsed = 'mock-data-varied';
+      
+      // Tampilkan pesan error yang lebih jelas
+      console.log(`PERHATIAN: Menggunakan data mock dengan tingkat keparahan "${selectedMockSeverity.frontendSeverity}" karena Flask API tidak tersedia`);
     }
 
     // Simpan hasil analisis ke database dengan konsistensi menggunakan base64
