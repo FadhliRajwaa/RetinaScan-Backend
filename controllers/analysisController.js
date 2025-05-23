@@ -292,6 +292,7 @@ export const uploadImage = async (req, res, next) => {
               predictionResult.frontendSeverityLevel = severityLevelMapping[predictionResult.severity] || predictionResult.severity_level || 0;
               
               // Tambahkan rekomendasi berdasarkan tingkat keparahan
+              // Menggunakan rekomendasi yang sama persis dengan yang didefinisikan di flask_service/app.py
               const recommendationMapping = {
                 'Tidak ada DR': 'Lakukan pemeriksaan rutin setiap tahun.',
                 'DR Ringan': 'Kontrol gula darah dan tekanan darah. Pemeriksaan ulang dalam 9-12 bulan.',
@@ -301,7 +302,7 @@ export const uploadImage = async (req, res, next) => {
                 // Fallback untuk format lama
                 'Normal': 'Lakukan pemeriksaan rutin setiap tahun.',
                 'Diabetic Retinopathy': 'Konsultasi dengan dokter spesialis mata. Pemeriksaan ulang dalam 6 bulan.',
-                // Tambahan untuk kompatibilitas dengan Flask API terbaru
+                // Tambahan untuk kompatibilitas dengan Flask API terbaru - PERSIS SAMA dengan yang di app.py
                 'No DR': 'Lakukan pemeriksaan rutin setiap tahun.',
                 'Mild': 'Kontrol gula darah dan tekanan darah. Pemeriksaan ulang dalam 9-12 bulan.',
                 'Moderate': 'Konsultasi dengan dokter spesialis mata. Pemeriksaan ulang dalam 6 bulan.',
@@ -309,7 +310,8 @@ export const uploadImage = async (req, res, next) => {
                 'Proliferative DR': 'Rujukan segera ke dokter spesialis mata untuk evaluasi dan kemungkinan tindakan laser atau operasi.'
               };
               
-              predictionResult.recommendation = recommendationMapping[predictionResult.severity] || 'Konsultasikan dengan dokter mata.';
+              // Gunakan rekomendasi dari Flask API jika ada, jika tidak gunakan mapping
+              predictionResult.recommendation = predictionResult.recommendation || recommendationMapping[predictionResult.severity] || 'Konsultasikan dengan dokter mata.';
             }
           } catch (error) {
             lastError = error;
@@ -446,7 +448,11 @@ export const uploadImage = async (req, res, next) => {
           patientId: analysis.patientId,
           imageData: imageBase64, // Kirim image data langsung ke client
           isSimulation: isSimulation,
-          flaskApiUrl: apiUrlUsed
+          flaskApiUrl: apiUrlUsed,
+          // Tambahkan informasi tambahan untuk dashboard
+          createdAt: analysis.createdAt,
+          originalFilename: analysis.originalFilename,
+          notes: predictionResult.recommendation || ''
         }
       });
 

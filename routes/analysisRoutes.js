@@ -9,6 +9,31 @@ router.post('/upload', authMiddleware, upload.single('image'), uploadImage);
 router.get('/history', authMiddleware, getUserAnalyses);
 router.get('/api-status/flask', authMiddleware, getFlaskApiStatus);
 router.get('/test-flask-connection', authMiddleware, testFlaskConnection);
+router.get('/flask-info', authMiddleware, async (req, res) => {
+  try {
+    const FLASK_API_URL = process.env.FLASK_API_URL || 'http://localhost:5001';
+    const FLASK_API_INFO_URL = `${FLASK_API_URL}/info`;
+    
+    console.log(`Mengambil info dari Flask API: ${FLASK_API_INFO_URL}`);
+    
+    const response = await axios.get(FLASK_API_INFO_URL, {
+      timeout: 10000
+    });
+    
+    res.json({
+      success: true,
+      flaskApiUrl: FLASK_API_URL,
+      info: response.data
+    });
+  } catch (error) {
+    console.error('Error saat mengambil info Flask API:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      flaskApiUrl: process.env.FLASK_API_URL || 'http://localhost:5001'
+    });
+  }
+});
 router.get('/latest', authMiddleware, async (req, res) => {
   try {
     const RetinaAnalysis = req.app.get('models').RetinaAnalysis;

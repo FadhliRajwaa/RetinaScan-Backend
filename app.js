@@ -31,11 +31,14 @@ const io = new Server(httpServer, {
     origin: [
       process.env.VITE_FRONTEND_URL, 
       process.env.VITE_DASHBOARD_URL, 
+      process.env.FLASK_API_URL,
       "http://localhost:5173", 
       "http://localhost:3000",
+      "http://localhost:5001",
       "https://retinascan.onrender.com",
       "https://retinascan-dashboard.onrender.com",
-      "https://retinascan-backend-eszo.onrender.com"
+      "https://retinascan-backend-eszo.onrender.com",
+      "https://flask-service-1qmz.onrender.com"
     ],
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
@@ -58,11 +61,14 @@ app.use(cors({
   origin: [
     process.env.VITE_FRONTEND_URL, 
     process.env.VITE_DASHBOARD_URL, 
+    process.env.FLASK_API_URL,
     'http://localhost:5173', 
     'http://localhost:3000',
+    'http://localhost:5001',
     'https://retinascan.onrender.com',
     'https://retinascan-dashboard.onrender.com',
-    'https://retinascan-backend-eszo.onrender.com'
+    'https://retinascan-backend-eszo.onrender.com',
+    'https://flask-service-1qmz.onrender.com'
   ],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
