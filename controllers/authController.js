@@ -2,6 +2,28 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import User from '../models/User.js';
 
+export const verifyToken = async (req, res) => {
+  // Jika request sampai di sini, berarti token valid karena sudah melewati authMiddleware
+  try {
+    const user = await User.findById(req.user.id).select('-password');
+    if (!user) {
+      return res.status(404).json({ message: 'Pengguna tidak ditemukan' });
+    }
+    return res.json({ 
+      valid: true, 
+      user: { 
+        id: user._id, 
+        name: user.name, 
+        email: user.email,
+        fullName: user.fullName || user.name
+      } 
+    });
+  } catch (error) {
+    console.error('Error verifying token:', error);
+    return res.status(500).json({ message: 'Server error saat verifikasi token' });
+  }
+};
+
 export const register = async (req, res, next) => {
   const { name, email, password } = req.body;
   try {

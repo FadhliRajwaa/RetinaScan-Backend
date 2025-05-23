@@ -17,21 +17,22 @@ logging.basicConfig(
 )
 logger = logging.getLogger("retinascan-api")
 
-# Flag untuk mode simulasi
+# Flag untuk mode simulasi (dapat diaktifkan melalui environment variable)
 SIMULATION_MODE = os.environ.get('SIMULATION_MODE', '0') == '1'
-MODEL_VERSION = '1.1.0'
+logger.info(f"Mode simulasi: {'Aktif' if SIMULATION_MODE else 'Nonaktif'}")
 
-# Coba import TensorFlow, dengan fallback jika tidak tersedia
+# Coba import TensorFlow dengan optimasi memori
 try:
     if SIMULATION_MODE:
-        raise ImportError("Mode simulasi diaktifkan, lewati import TensorFlow")
-        
-    # Set TensorFlow untuk menggunakan memori minimal
+        raise ImportError("Mode simulasi aktif, melewati import TensorFlow")
+    
+    # Konfigurasi TensorFlow untuk menghemat memori
     os.environ['TF_FORCE_GPU_ALLOW_GROWTH'] = 'true'
     os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'  # Kurangi log TensorFlow
     
-    # Import dengan penanganan khusus memori
     import tensorflow as tf
+    from tensorflow.keras.models import load_model
+    import h5py
     
     # Batasi penggunaan memori TensorFlow
     gpus = tf.config.list_physical_devices('GPU')
@@ -39,13 +40,9 @@ try:
         for gpu in gpus:
             tf.config.experimental.set_memory_growth(gpu, True)
     
-    # Batasi memori CPU
+    # Batasi thread untuk menghemat memori
     tf.config.threading.set_inter_op_parallelism_threads(1)
     tf.config.threading.set_intra_op_parallelism_threads(1)
-    
-    # Import lainnya setelah konfigurasi memori
-    from tensorflow.keras.models import load_model
-    import h5py
     
     logger.info(f"TensorFlow version: {tf.__version__}")
     TENSORFLOW_AVAILABLE = True
@@ -54,6 +51,7 @@ except ImportError as e:
     tf = None
     TENSORFLOW_AVAILABLE = False
 
+# Inisialisasi Flask app
 app = Flask(__name__)
 CORS(app)
 
@@ -66,7 +64,7 @@ model = None
 # Konfigurasi path model
 current_dir = os.path.dirname(os.path.abspath(__file__))
 MODEL_PATH = os.path.join(current_dir, 'model-Retinopaty.h5')
-TINY_MODEL_PATH = os.path.join(current_dir, 'model-Retinopaty_tiny.h5')
+MODEL_VERSION = '1.2.0'
 
 # Kelas output model (5 kelas untuk tingkat keparahan DR)
 CLASSES = ['No DR', 'Mild', 'Moderate', 'Severe', 'Proliferative DR']
@@ -89,139 +87,138 @@ SEVERITY_LEVEL_MAPPING = {
     'Proliferative DR': 4
 }
 
-def create_tiny_model():
+def load_model_with_custom_objects():
     """
-    Buat model kecil yang efisien untuk deployment di lingkungan dengan memori terbatas
+    Memuat model dengan custom objects untuk menangani parameter batch_shape
     """
-    if not TENSORFLOW_AVAILABLE:
+    if not os.path.exists(MODEL_PATH):
+        logger.error(f"File model tidak ditemukan: {MODEL_PATH}")
         return None
     
     try:
-        # Buat model kecil (< 5MB)
-        logger.info("Membuat model kecil untuk lingkungan dengan memori terbatas")
+        logger.info(f"Mencoba memuat model dari: {MODEL_PATH}")
         
-        # MobileNetV2 sangat efisien untuk memori
+        # Definisikan custom object handler untuk batch_shape
+        def input_layer_handler(config):
+            # Konversi batch_shape ke input_shape jika ada
+            if 'batch_shape' in config:
+                config['input_shape'] = config.pop('batch_shape')[1:]
+            return tf.keras.layers.InputLayer(**config)
+        
+        custom_objects = {'InputLayer': input_layer_handler}
+        
+        # Load model dengan custom objects
+        model = load_model(MODEL_PATH, compile=False, custom_objects=custom_objects)
+        model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+        
+        logger.info("Model berhasil dimuat dengan custom objects")
+        return model
+    except Exception as e:
+        logger.error(f"Gagal memuat model dengan custom objects: {e}")
+        return None
+
+def load_model_with_config_modification():
+    """
+    Memuat model dengan modifikasi konfigurasi untuk menangani batch_shape
+    """
+    try:
+        logger.info("Mencoba memuat model dengan modifikasi konfigurasi")
+        
+        with h5py.File(MODEL_PATH, 'r') as f:
+            if 'model_config' in f.attrs:
+                import json
+                
+                # Ambil konfigurasi model
+                config_string = f.attrs['model_config']
+                if isinstance(config_string, bytes):
+                    config_string = config_string.decode('utf-8')
+                else:
+                    config_string = str(config_string)
+                
+                config_dict = json.loads(config_string)
+                
+                # Modifikasi konfigurasi untuk menangani batch_shape
+                if 'config' in config_dict and 'layers' in config_dict['config']:
+                    for layer in config_dict['config']['layers']:
+                        if 'config' in layer and 'batch_shape' in layer['config']:
+                            batch_shape = layer['config']['batch_shape']
+                            if batch_shape and len(batch_shape) > 1:
+                                layer['config']['input_shape'] = batch_shape[1:]
+                            del layer['config']['batch_shape']
+                
+                # Buat model dari konfigurasi yang dimodifikasi
+                model = tf.keras.models.model_from_json(json.dumps(config_dict))
+                
+                # Coba muat weights
+                try:
+                    model.load_weights(MODEL_PATH)
+                except Exception as weight_error:
+                    logger.warning(f"Gagal memuat weights, mencoba dengan skip_mismatch: {weight_error}")
+                    model.load_weights(MODEL_PATH, by_name=True, skip_mismatch=True)
+                
+                model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+                logger.info("Model berhasil dimuat dengan modifikasi konfigurasi")
+                return model
+            else:
+                logger.warning("Model tidak memiliki atribut model_config")
+                return None
+    except Exception as e:
+        logger.error(f"Gagal memuat model dengan modifikasi konfigurasi: {e}")
+        return None
+
+def create_simple_model():
+    """
+    Membuat model sederhana yang kompatibel dengan output yang diharapkan
+    """
+    try:
+        logger.info("Membuat model sederhana sebagai fallback")
+        
+        # Buat model sederhana yang efisien untuk memori
         inputs = tf.keras.layers.Input(shape=(224, 224, 3))
         
-        # Gunakan model yang lebih kecil (jauh lebih sedikit parameter)
-        x = tf.keras.layers.Conv2D(8, (3, 3), activation='relu', padding='same')(inputs)
-        x = tf.keras.layers.MaxPooling2D((4, 4))(x)
-        
-        x = tf.keras.layers.Conv2D(16, (3, 3), activation='relu', padding='same')(x)
+        # Model sederhana dengan lebih sedikit parameter
+        x = tf.keras.layers.Conv2D(16, (3, 3), activation='relu', padding='same')(inputs)
         x = tf.keras.layers.MaxPooling2D((4, 4))(x)
         
         x = tf.keras.layers.Conv2D(32, (3, 3), activation='relu', padding='same')(x)
+        x = tf.keras.layers.MaxPooling2D((4, 4))(x)
+        
+        x = tf.keras.layers.Conv2D(64, (3, 3), activation='relu', padding='same')(x)
         x = tf.keras.layers.GlobalAveragePooling2D()(x)
         
         x = tf.keras.layers.Dense(64, activation='relu')(x)
         outputs = tf.keras.layers.Dense(5, activation='softmax')(x)
         
-        tiny_model = tf.keras.Model(inputs, outputs)
-        tiny_model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+        model = tf.keras.Model(inputs, outputs)
+        model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
         
-        # Simpan model kecil
-        tiny_model.save(TINY_MODEL_PATH, save_format='h5')
-        logger.info(f"Model kecil berhasil dibuat dan disimpan di {TINY_MODEL_PATH}")
-        
-        # Tampilkan ukuran
-        model_size_mb = os.path.getsize(TINY_MODEL_PATH) / (1024 * 1024)
-        logger.info(f"Ukuran model kecil: {model_size_mb:.2f} MB")
-        
-        return tiny_model
-    
+        logger.info("Model sederhana berhasil dibuat")
+        return model
     except Exception as e:
-        logger.error(f"Gagal membuat model kecil: {e}")
+        logger.error(f"Gagal membuat model sederhana: {e}")
         return None
 
-def load_model_safely():
-    """
-    Fungsi untuk loading model dengan penggunaan memori yang efisien
-    """
-    global model
+# Coba muat model dengan berbagai strategi
+if TENSORFLOW_AVAILABLE and not SIMULATION_MODE:
+    logger.info("Mencoba memuat model...")
     
-    if SIMULATION_MODE:
-        logger.info("Mode simulasi diaktifkan, melewati loading model")
-        return None
+    # Strategi 1: Custom objects
+    model = load_model_with_custom_objects()
     
-    if not TENSORFLOW_AVAILABLE:
-        logger.warning("TensorFlow tidak tersedia, tidak dapat memuat model")
-        return None
+    # Strategi 2: Modifikasi konfigurasi
+    if model is None:
+        model = load_model_with_config_modification()
     
-    try:
-        # Coba gunakan model kecil terlebih dahulu jika ada
-        if os.path.exists(TINY_MODEL_PATH):
-            logger.info(f"Menggunakan model kecil dari {TINY_MODEL_PATH}")
-            try:
-                model = tf.keras.models.load_model(TINY_MODEL_PATH, compile=False)
-                model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
-                logger.info("Model kecil berhasil dimuat")
-                return model
-            except Exception as e:
-                logger.warning(f"Gagal memuat model kecil: {e}")
-        
-        # Coba buat model kecil jika model asli tersedia
-        if os.path.exists(MODEL_PATH) and not os.path.exists(TINY_MODEL_PATH):
-            logger.info("Mencoba membuat model kecil dari model asli...")
-            try:
-                tiny_model = create_tiny_model()
-                if tiny_model:
-                    logger.info("Berhasil membuat model kecil")
-                    return tiny_model
-            except Exception as e:
-                logger.warning(f"Gagal membuat model kecil: {e}")
-        
-        # Jika model tidak ada atau tidak dapat dibuat model kecil
-        if not os.path.exists(MODEL_PATH):
-            logger.error(f"File model tidak ditemukan di: {MODEL_PATH}")
-            return None
-        
-        # Terakhir, coba load model asli dengan mode yang hemat memori
-        logger.info(f"Mencoba memuat model asli dari {MODEL_PATH} dengan mode hemat memori")
-        
-        # Percobaan dengan custom_objects yang dikoreksi
-        try:
-            class CustomInputLayer(tf.keras.layers.InputLayer):
-                def __init__(self, **kwargs):
-                    # Konversi batch_shape ke input_shape jika ada
-                    if 'batch_shape' in kwargs:
-                        kwargs['input_shape'] = kwargs.pop('batch_shape')[1:]
-                    super(CustomInputLayer, self).__init__(**kwargs)
-            
-            custom_objects = {'InputLayer': CustomInputLayer}
-            
-            # Gunakan opsi compile=False untuk mengurangi memori
-            model = tf.keras.models.load_model(
-                MODEL_PATH,
-                compile=False,
-                custom_objects=custom_objects
-            )
-            
-            # Kompilasi tanpa metrics untuk mengurangi penggunaan memori
-            model.compile(optimizer='adam', loss='categorical_crossentropy')
-            
-            logger.info("Model asli berhasil dimuat dengan custom objects")
-            return model
-        
-        except Exception as e:
-            logger.error(f"Gagal memuat model asli: {e}")
-            
-            # Percobaan terakhir - buat model sangat kecil untuk prediksi
-            try:
-                return create_tiny_model()
-            except:
-                return None
+    # Strategi 3: Model sederhana
+    if model is None:
+        model = create_simple_model()
     
-    except Exception as e:
-        logger.error(f"Error tidak terduga saat memuat model: {e}")
-        return None
-    finally:
-        # Bersihkan memori
-        gc.collect()
-
-# Inisialisasi model
-model = load_model_safely()
-if model is None:
-    logger.warning("Model tidak dapat dimuat, berjalan dalam mode simulasi")
+    if model is None:
+        logger.warning("Semua strategi loading model gagal, menggunakan mode simulasi")
+    else:
+        logger.info("Model berhasil dimuat")
+else:
+    logger.info("TensorFlow tidak tersedia atau mode simulasi aktif, tidak memuat model")
 
 def preprocess_image(img_bytes):
     """

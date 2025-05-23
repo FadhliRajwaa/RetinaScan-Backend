@@ -28,8 +28,17 @@ const app = express();
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
   cors: {
-    origin: [process.env.VITE_FRONTEND_URL, process.env.VITE_DASHBOARD_URL, "http://localhost:5173", "http://localhost:3000"],
-    methods: ["GET", "POST"],
+    origin: [
+      process.env.VITE_FRONTEND_URL, 
+      process.env.VITE_DASHBOARD_URL, 
+      "http://localhost:5173", 
+      "http://localhost:3000",
+      "https://retinascan.onrender.com",
+      "https://retinascan-dashboard.onrender.com",
+      "https://retinascan-backend-eszo.onrender.com"
+    ],
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
     credentials: true
   }
 });
@@ -46,9 +55,34 @@ if (!fs.existsSync(uploadsDir)) {
 
 // Middleware
 app.use(cors({
-  origin: [process.env.VITE_FRONTEND_URL, process.env.VITE_DASHBOARD_URL, 'http://localhost:5173', 'http://localhost:3000'],
+  origin: [
+    process.env.VITE_FRONTEND_URL, 
+    process.env.VITE_DASHBOARD_URL, 
+    'http://localhost:5173', 
+    'http://localhost:3000',
+    'https://retinascan.onrender.com',
+    'https://retinascan-dashboard.onrender.com',
+    'https://retinascan-backend-eszo.onrender.com'
+  ],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: true,
 }));
+
+// Middleware tambahan untuk menangani CORS
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+  
+  // Intercept OPTIONS method
+  if (req.method === 'OPTIONS') {
+    res.sendStatus(200);
+  } else {
+    next();
+  }
+});
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
