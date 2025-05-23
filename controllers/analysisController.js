@@ -27,28 +27,85 @@ let flaskApiStatus = {
   info: null
 };
 
-// Periksa apakah Flask API tersedia
+// Periksa apakah Flask API tersedia dengan mekanisme retry yang lebih robust
 const checkFlaskApiStatus = async () => {
-  if (!flaskApiStatus.checked || Date.now() - flaskApiStatus.lastCheck > 60000) { // Periksa setiap 1 menit
+  // Jika sudah diperiksa dalam 1 menit terakhir, gunakan hasil cache
+  if (flaskApiStatus.checked && Date.now() - flaskApiStatus.lastCheck < 60000) {
+    return flaskApiStatus.available;
+  }
+  
+  console.log(`Memeriksa status Flask API di: ${FLASK_API_INFO_URL}`);
+  
+  // Implementasi retry logic
+  let retries = 3;
+  let success = false;
+  let lastError = null;
+  
+  while (retries > 0 && !success) {
     try {
-      console.log(`Memeriksa status Flask API di: ${FLASK_API_INFO_URL}`);
+      console.log(`Mencoba koneksi ke Flask API (percobaan ke-${4-retries}/3)...`);
+      
       const response = await axios.get(FLASK_API_INFO_URL, {
-        timeout: 5000
+        timeout: 15000 // Timeout yang lebih panjang untuk mengakomodasi cold start
       });
+      
       flaskApiStatus.available = true;
       flaskApiStatus.info = response.data;
+      flaskApiStatus.lastSuccessfulResponse = response.data;
+      flaskApiStatus.lastCheck = Date.now();
+      flaskApiStatus.checked = true;
+      flaskApiStatus.retryCount = 0; // Reset retry counter
+      
       console.log('Flask API tersedia:', flaskApiStatus.info.model_name);
       console.log('Mode simulasi:', flaskApiStatus.info.simulation_mode ? 'Ya' : 'Tidak');
+      console.log('Kelas model:', flaskApiStatus.info.classes ? flaskApiStatus.info.classes.join(', ') : 'Tidak diketahui');
+      console.log('Versi API:', flaskApiStatus.info.api_version || '1.0.0');
+      
+      success = true;
+      return true;
     } catch (error) {
-      console.error('Flask API tidak tersedia:', error.message);
+      lastError = error;
+      
+      // Log error details
+      console.error(`Flask API tidak tersedia (percobaan ke-${4-retries}/3):`, error.message);
       console.error('URL yang dicoba:', FLASK_API_INFO_URL);
-      flaskApiStatus.available = false;
-      flaskApiStatus.info = null;
+      
+      if (error.response) {
+        console.error('Response status:', error.response.status);
+        console.error('Response data:', error.response.data);
+      } else if (error.request) {
+        console.error('Tidak ada respons dari server Flask API');
+      }
+      
+      // Deteksi cold start (502 Bad Gateway)
+      if (error.response && error.response.status === 502) {
+        console.log('Terdeteksi cold start pada Render free tier. Menunggu lebih lama...');
+        await new Promise(resolve => setTimeout(resolve, 10000)); // Wait 10 seconds
+      } else {
+        // Delay standar antara percobaan
+        await new Promise(resolve => setTimeout(resolve, 3000)); // Wait 3 seconds
+      }
+      
+      retries--;
     }
-    flaskApiStatus.checked = true;
-    flaskApiStatus.lastCheck = Date.now();
   }
-  return flaskApiStatus.available;
+  
+  // Jika semua percobaan gagal
+  flaskApiStatus.available = false;
+  flaskApiStatus.lastError = {
+    message: lastError ? lastError.message : 'Unknown error',
+    timestamp: Date.now()
+  };
+  flaskApiStatus.retryCount = (flaskApiStatus.retryCount || 0) + 1;
+  flaskApiStatus.lastCheck = Date.now();
+  flaskApiStatus.checked = true;
+  
+  // Tetap gunakan info terakhir yang berhasil jika ada
+  if (!flaskApiStatus.info && flaskApiStatus.lastSuccessfulResponse) {
+    flaskApiStatus.info = flaskApiStatus.lastSuccessfulResponse;
+  }
+  
+  return false;
 };
 
 // Fungsi untuk menguji koneksi ke Flask API secara menyeluruh
@@ -160,21 +217,24 @@ export const uploadImage = async (req, res, next) => {
         console.log(`Mengirim request ke Flask API di: ${FLASK_API_URL}`);
         apiUrlUsed = FLASK_API_URL;
         
-        // Kirim request ke Flask API dengan retry logic sederhana
+        // Kirim request ke Flask API dengan retry logic yang lebih robust
         let retries = 3;
         let success = false;
         let lastError = null;
+        let coldStartDetected = false;
         
         while (retries > 0 && !success) {
           try {
-            // Kirim request ke Flask API
+            console.log(`Mencoba request ke Flask API (sisa percobaan: ${retries})...`);
+            
+            // Kirim request ke Flask API dengan timeout yang lebih panjang untuk cold start
             const response = await axios.post(FLASK_API_URL, formData, {
               headers: {
                 ...formData.getHeaders(),
               },
               maxContentLength: Infinity,
               maxBodyLength: Infinity,
-              timeout: 30000 // 30 detik timeout
+              timeout: 180000 // 3 menit timeout untuk mengakomodasi cold start
             });
             
             // Ambil hasil prediksi
@@ -253,16 +313,33 @@ export const uploadImage = async (req, res, next) => {
             }
           } catch (error) {
             lastError = error;
-            retries--;
-            if (retries > 0) {
-              console.log(`Error, mencoba kembali (${retries} percobaan tersisa)...`);
-              await new Promise(resolve => setTimeout(resolve, 1000)); // Tunggu 1 detik sebelum mencoba lagi
+            
+            // Deteksi apakah ini terkait cold start (502 Bad Gateway saat startup)
+            if (error.response && error.response.status === 502) {
+              if (!coldStartDetected) {
+                console.log('Terdeteksi cold start pada free tier Render. Ini bisa memakan waktu 2-3 menit...');
+                coldStartDetected = true;
+              }
+              
+              // Gunakan delay yang lebih lama untuk cold start (30 detik)
+              console.log('Menunggu 30 detik untuk cold start...');
+              await new Promise(resolve => setTimeout(resolve, 30000));
+            } else {
+              // Delay standar untuk error umum
+              console.log(`Error biasa, mencoba kembali dalam 5 detik (${retries} percobaan tersisa)...`);
+              await new Promise(resolve => setTimeout(resolve, 5000));
             }
+            
+            retries--;
           }
         }
         
         if (!success) {
-          throw lastError || new Error('Gagal menghubungi Flask API setelah beberapa percobaan');
+          if (coldStartDetected) {
+            throw new Error('Free tier Render membutuhkan waktu untuk startup. Silakan coba lagi dalam 2-3 menit.');
+          } else {
+            throw lastError || new Error('Gagal menghubungi Flask API setelah beberapa percobaan');
+          }
         }
       } catch (flaskError) {
         console.error('Error saat menghubungi Flask API:', flaskError.message);
@@ -309,18 +386,41 @@ export const uploadImage = async (req, res, next) => {
       apiUrlUsed = 'mock-data';
     }
 
-    // Simpan hasil analisis ke database dengan path relatif dan image data
+    // Simpan hasil analisis ke database dengan konsistensi menggunakan base64
     try {
       console.log('Membaca file gambar untuk disimpan ke database...');
-      // Baca file gambar dan konversi ke base64
+      
+      // Baca file gambar dan konversi ke base64 dengan optimasi ukuran
       const imageBuffer = fs.readFileSync(req.file.path);
-      const imageBase64 = `data:${req.file.mimetype};base64,${imageBuffer.toString('base64')}`;
+      
+      // Optimasi ukuran base64 dengan mendeteksi tipe MIME yang tepat
+      let mimeType = req.file.mimetype;
+      if (!mimeType || mimeType === 'application/octet-stream') {
+        // Deteksi berdasarkan ekstensi file jika MIME tidak tersedia
+        const ext = path.extname(req.file.originalname).toLowerCase();
+        if (ext === '.jpg' || ext === '.jpeg') mimeType = 'image/jpeg';
+        else if (ext === '.png') mimeType = 'image/png';
+        else if (ext === '.gif') mimeType = 'image/gif';
+        else mimeType = 'image/jpeg'; // Default to JPEG
+      }
+      
+      const imageBase64 = `data:${mimeType};base64,${imageBuffer.toString('base64')}`;
+      
+      // Hapus file fisik setelah dikonversi ke base64 untuk konsistensi penyimpanan
+      // dan menghindari duplikasi data
+      try {
+        fs.unlinkSync(req.file.path);
+        console.log(`File fisik dihapus setelah konversi ke base64: ${req.file.path}`);
+      } catch (unlinkError) {
+        console.error('Gagal menghapus file fisik:', unlinkError);
+        // Lanjutkan proses meskipun gagal menghapus file
+      }
       
       console.log('Menyimpan hasil analisis ke database...');
       const analysis = new RetinaAnalysis({
         userId: req.user.id,
         patientId: req.body.patientId,
-        imagePath: relativePath, // Simpan path juga sebagai backup
+        imagePath: null, // Tidak perlu menyimpan path karena menggunakan base64
         imageData: imageBase64, // Simpan data gambar base64 ke database
         originalFilename: req.file.originalname,
         severity: predictionResult.frontendSeverity || predictionResult.severity,
@@ -408,9 +508,28 @@ export const getUserAnalyses = async (req, res, next) => {
             
             analysis.imageData = `data:${mimetype};base64,${imageBuffer.toString('base64')}`;
             await analysis.save();
+            
+            // Hapus file fisik setelah konversi ke base64
+            try {
+              fs.unlinkSync(filePath);
+              console.log(`File fisik dihapus setelah konversi ke base64: ${filePath}`);
+            } catch (unlinkError) {
+              console.error('Gagal menghapus file fisik:', unlinkError);
+              // Lanjutkan proses meskipun gagal menghapus file
+            }
+          } else {
+            console.error(`File tidak ditemukan di path ${analysis.imagePath}`);
+            // Tambahkan placeholder image jika file tidak ditemukan
+            analysis.imageData = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgZmlsbD0iI2VlZWVlZSIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMjAiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZpbGw9IiM5OTk5OTkiPkdhbWJhciB0aWRhayB0ZXJzZWRpYTwvdGV4dD48L3N2Zz4=';
+            analysis.imagePath = null; // Hapus path yang tidak valid
+            await analysis.save();
           }
         } catch (err) {
           console.error(`Gagal membaca gambar dari path ${analysis.imagePath}:`, err);
+          // Tambahkan placeholder image jika terjadi error
+          analysis.imageData = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgZmlsbD0iI2VlZWVlZSIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMjAiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZpbGw9IiM5OTk5OTkiPkdhbWJhciB0aWRhayB0ZXJzZWRpYTwvdGV4dD48L3N2Zz4=';
+          analysis.imagePath = null; // Hapus path yang tidak valid
+          await analysis.save();
         }
       }
     }

@@ -20,6 +20,10 @@ import Patient from './models/Patient.js';
 
 // Konfigurasi environment variables
 dotenv.config();
+
+// Simpan waktu mulai aplikasi untuk health check
+global.startTime = Date.now();
+
 const app = express();
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
@@ -78,6 +82,30 @@ app.set('models', {
   RetinaAnalysis,
   User,
   Patient
+});
+
+// Health check endpoint
+app.get('/api/health', (req, res) => {
+  const startTime = global.startTime || Date.now();
+  const uptime = Date.now() - startTime;
+  
+  try {
+    res.json({
+      status: 'healthy',
+      version: '1.0.0',
+      uptime: uptime,
+      uptime_formatted: `${Math.floor(uptime / 86400000)}d ${Math.floor((uptime % 86400000) / 3600000)}h ${Math.floor((uptime % 3600000) / 60000)}m ${Math.floor((uptime % 60000) / 1000)}s`,
+      environment: process.env.NODE_ENV || 'development',
+      timestamp: new Date().toISOString(),
+      mongo_connection: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
+      services: {
+        flask_api: process.env.FLASK_API_URL || 'not configured'
+      }
+    });
+  } catch (error) {
+    console.error('Health check error:', error);
+    res.status(500).json({ status: 'error', error: error.message });
+  }
 });
 
 // Routes

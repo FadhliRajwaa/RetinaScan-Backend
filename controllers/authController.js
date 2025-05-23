@@ -17,14 +17,84 @@ export const register = async (req, res, next) => {
 
 export const login = async (req, res, next) => {
   const { email, password } = req.body;
+  
+  // Validasi input
+  if (!email || !password) {
+    return res.status(400).json({ message: 'Email dan kata sandi diperlukan' });
+  }
+  
+  // Validasi format email
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(email)) {
+    return res.status(400).json({ message: 'Format email tidak valid' });
+  }
+  
   try {
+    // Tambahkan rate limiting sederhana (implementasi lengkap memerlukan Redis atau solusi lain)
+    // Ini hanya contoh sederhana
+    const loginAttempts = global.loginAttempts || {};
+    const ipAddress = req.ip || 'unknown';
+    const now = Date.now();
+    
+    // Bersihkan entri lama (lebih dari 15 menit)
+    Object.keys(loginAttempts).forEach(ip => {
+      if (now - loginAttempts[ip].timestamp > 15 * 60 * 1000) {
+        delete loginAttempts[ip];
+      }
+    });
+    
+    // Periksa jumlah percobaan
+    if (loginAttempts[ipAddress] && loginAttempts[ipAddress].count >= 5 && 
+        now - loginAttempts[ipAddress].timestamp < 15 * 60 * 1000) {
+      return res.status(429).json({ 
+        message: 'Terlalu banyak percobaan login. Coba lagi nanti.',
+        retryAfter: Math.ceil((loginAttempts[ipAddress].timestamp + 15 * 60 * 1000 - now) / 1000)
+      });
+    }
+    
     const user = await User.findOne({ email });
     if (!user || !(await user.matchPassword(password))) {
+      // Catat percobaan login yang gagal
+      if (!loginAttempts[ipAddress]) {
+        loginAttempts[ipAddress] = { count: 1, timestamp: now };
+      } else {
+        loginAttempts[ipAddress].count++;
+        loginAttempts[ipAddress].timestamp = now;
+      }
+      global.loginAttempts = loginAttempts;
+      
       return res.status(401).json({ message: 'Email atau kata sandi salah' });
     }
-    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '1d' });
-    res.json({ token, user: { id: user._id, name: user.name, email: user.email } });
+    
+    // Reset percobaan login jika berhasil
+    if (loginAttempts[ipAddress]) {
+      delete loginAttempts[ipAddress];
+      global.loginAttempts = loginAttempts;
+    }
+    
+    // Buat token dengan expiry yang lebih pendek dan tambahkan informasi penting
+    const token = jwt.sign(
+      { 
+        id: user._id,
+        email: user.email,
+        iat: Math.floor(Date.now() / 1000)
+      }, 
+      process.env.JWT_SECRET, 
+      { expiresIn: '1d' }
+    );
+    
+    res.json({ 
+      token, 
+      user: { 
+        id: user._id, 
+        name: user.name, 
+        email: user.email,
+        fullName: user.fullName || user.name
+      },
+      expiresIn: 86400 // 24 jam dalam detik
+    });
   } catch (error) {
+    console.error('Login error:', error);
     next(error);
   }
 };
