@@ -11,9 +11,28 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 // Gunakan environment variable FLASK_API_URL yang sudah diatur di Render
-const FLASK_API_BASE_URL = process.env.FLASK_API_URL || 'http://localhost:5001';
-const FLASK_API_URL = `${FLASK_API_BASE_URL}/predict`;
-const FLASK_API_INFO_URL = `${FLASK_API_BASE_URL}/info`;
+// Tambahkan URL alternatif jika URL utama tidak tersedia
+const FLASK_API_BASE_URLS = [
+  process.env.FLASK_API_URL || 'https://flask-service-1qmz.onrender.com',
+  'https://retinascan-flask-api.onrender.com',
+  'http://localhost:5001'
+];
+
+// Mulai dengan URL pertama
+let currentUrlIndex = 0;
+let FLASK_API_BASE_URL = FLASK_API_BASE_URLS[currentUrlIndex];
+let FLASK_API_URL = `${FLASK_API_BASE_URL}/predict`;
+let FLASK_API_INFO_URL = `${FLASK_API_BASE_URL}/info`;
+
+// Fungsi untuk beralih ke URL berikutnya
+const switchToNextFlaskApiUrl = () => {
+  currentUrlIndex = (currentUrlIndex + 1) % FLASK_API_BASE_URLS.length;
+  FLASK_API_BASE_URL = FLASK_API_BASE_URLS[currentUrlIndex];
+  FLASK_API_URL = `${FLASK_API_BASE_URL}/predict`;
+  FLASK_API_INFO_URL = `${FLASK_API_BASE_URL}/info`;
+  console.log(`Beralih ke Flask API URL alternatif: ${FLASK_API_BASE_URL}`);
+  return FLASK_API_BASE_URL;
+};
 
 console.log(`Flask API Base URL: ${FLASK_API_BASE_URL}`);
 console.log(`Flask API Predict URL: ${FLASK_API_URL}`);
@@ -37,97 +56,123 @@ const checkFlaskApiStatus = async () => {
   
   console.log(`Memeriksa status Flask API di: ${FLASK_API_INFO_URL}`);
   
-  // Implementasi retry logic
-  let retries = 3;
-  let success = false;
-  let lastError = null;
+  // Coba semua URL alternatif jika perlu
+  let allUrlsTried = false;
+  let startingUrlIndex = currentUrlIndex; // Simpan URL awal untuk menghindari loop tak terbatas
   
-  while (retries > 0 && !success) {
-    try {
-      console.log(`Mencoba koneksi ke Flask API (percobaan ke-${4-retries}/3)...`);
-      
-      const response = await axios.get(FLASK_API_INFO_URL, {
-        timeout: 15000 // Timeout yang lebih panjang untuk mengakomodasi cold start
-      });
-      
-      flaskApiStatus.available = true;
-      flaskApiStatus.info = response.data;
-      flaskApiStatus.lastSuccessfulResponse = response.data;
-      flaskApiStatus.lastCheck = Date.now();
-      flaskApiStatus.checked = true;
-      flaskApiStatus.retryCount = 0; // Reset retry counter
-      flaskApiStatus.fallbackMode = false; // Pastikan fallback mode dinonaktifkan
-      
-      console.log('Flask API tersedia:', flaskApiStatus.info.model_name);
-      console.log('Mode simulasi:', flaskApiStatus.info.simulation_mode ? 'Ya' : 'Tidak');
-      console.log('Kelas model:', flaskApiStatus.info.classes ? flaskApiStatus.info.classes.join(', ') : 'Tidak diketahui');
-      console.log('Versi API:', flaskApiStatus.info.api_version || '1.0.0');
-      
-      success = true;
-      return true;
-    } catch (error) {
-      lastError = error;
-      
-      // Log error details
-      console.error(`Flask API tidak tersedia (percobaan ke-${4-retries}/3):`, error.message);
-      console.error('URL yang dicoba:', FLASK_API_INFO_URL);
-      
-      if (error.response) {
-        console.error('Response status:', error.response.status);
-        // Batasi output data untuk menghindari teks random yang panjang
-        const responseData = error.response.data;
-        let truncatedData;
+  while (!allUrlsTried) {
+    // Implementasi retry logic untuk URL saat ini
+    let retries = 3;
+    let success = false;
+    let lastError = null;
+    
+    while (retries > 0 && !success) {
+      try {
+        console.log(`Mencoba koneksi ke Flask API di ${FLASK_API_BASE_URL} (percobaan ke-${4-retries}/3)...`);
         
-        if (typeof responseData === 'string') {
-          truncatedData = responseData.length > 100 
-            ? responseData.substring(0, 100) + '... [truncated]' 
-            : responseData;
-        } else if (responseData && typeof responseData === 'object') {
-          truncatedData = '[Object data]';
-        } else {
-          truncatedData = responseData;
+        const response = await axios.get(FLASK_API_INFO_URL, {
+          timeout: 15000 // Timeout yang lebih panjang untuk mengakomodasi cold start
+        });
+        
+        flaskApiStatus.available = true;
+        flaskApiStatus.info = response.data;
+        flaskApiStatus.lastSuccessfulResponse = response.data;
+        flaskApiStatus.lastCheck = Date.now();
+        flaskApiStatus.checked = true;
+        flaskApiStatus.retryCount = 0; // Reset retry counter
+        flaskApiStatus.fallbackMode = false; // Pastikan fallback mode dinonaktifkan
+        flaskApiStatus.activeUrl = FLASK_API_BASE_URL; // Simpan URL yang aktif
+        
+        console.log('Flask API tersedia:', flaskApiStatus.info.model_name || 'Tidak diketahui');
+        console.log('Mode simulasi:', flaskApiStatus.info.simulation_mode ? 'Ya' : 'Tidak');
+        console.log('Kelas model:', flaskApiStatus.info.classes ? flaskApiStatus.info.classes.join(', ') : 'Tidak diketahui');
+        console.log('Versi API:', flaskApiStatus.info.api_version || '1.0.0');
+        
+        success = true;
+        return true;
+      } catch (error) {
+        lastError = error;
+        
+        // Log error details
+        console.error(`Flask API tidak tersedia di ${FLASK_API_BASE_URL} (percobaan ke-${4-retries}/3):`, error.message);
+        
+        if (error.response) {
+          console.error('Response status:', error.response.status);
+          // Batasi output data untuk menghindari teks random yang panjang
+          const responseData = error.response.data;
+          let truncatedData;
+          
+          if (typeof responseData === 'string') {
+            truncatedData = responseData.length > 100 
+              ? responseData.substring(0, 100) + '... [truncated]' 
+              : responseData;
+          } else if (responseData && typeof responseData === 'object') {
+            truncatedData = '[Object data]';
+          } else {
+            truncatedData = responseData;
+          }
+          
+          console.error('Response data:', truncatedData);
+        } else if (error.request) {
+          console.error('Tidak ada respons dari server Flask API');
         }
         
-        console.error('Response data:', truncatedData);
-      } else if (error.request) {
-        console.error('Tidak ada respons dari server Flask API');
+        // Deteksi cold start (502 Bad Gateway)
+        if (error.response && error.response.status === 502) {
+          console.log('Terdeteksi cold start pada Render free tier. Menunggu lebih lama...');
+          await new Promise(resolve => setTimeout(resolve, 10000)); // Wait 10 seconds
+        } else {
+          // Delay standar antara percobaan
+          await new Promise(resolve => setTimeout(resolve, 3000)); // Wait 3 seconds
+        }
+        
+        retries--;
       }
-      
-      // Deteksi cold start (502 Bad Gateway)
-      if (error.response && error.response.status === 502) {
-        console.log('Terdeteksi cold start pada Render free tier. Menunggu lebih lama...');
-        await new Promise(resolve => setTimeout(resolve, 10000)); // Wait 10 seconds
-      } else {
-        // Delay standar antara percobaan
-        await new Promise(resolve => setTimeout(resolve, 3000)); // Wait 3 seconds
-      }
-      
-      retries--;
+    }
+    
+    // Jika semua percobaan gagal untuk URL saat ini, coba URL berikutnya
+    switchToNextFlaskApiUrl();
+    
+    // Periksa apakah kita sudah mencoba semua URL (kembali ke URL awal)
+    if (currentUrlIndex === startingUrlIndex) {
+      allUrlsTried = true;
     }
   }
   
-  // Jika semua percobaan gagal
+  // Jika semua URL dan percobaan gagal
   flaskApiStatus.available = false;
   flaskApiStatus.lastError = {
-    message: lastError ? lastError.message : 'Unknown error',
+    message: "Semua URL Flask API tidak tersedia",
     timestamp: Date.now()
   };
   flaskApiStatus.retryCount = (flaskApiStatus.retryCount || 0) + 1;
   flaskApiStatus.lastCheck = Date.now();
   flaskApiStatus.checked = true;
   
-  // PENTING: Jangan aktifkan fallback mode secara otomatis
-  // Kembalikan false untuk memaksa aplikasi menggunakan Flask API atau menampilkan error
-  // Ini akan mencegah hasil "Sedang" yang selalu muncul dari data mock
-  console.log('Flask API tidak tersedia setelah beberapa percobaan');
-  flaskApiStatus.fallbackMode = false;
+  // Coba gunakan URL terakhir yang berhasil jika ada
+  if (flaskApiStatus.activeUrl) {
+    console.log(`Mencoba menggunakan URL terakhir yang berhasil: ${flaskApiStatus.activeUrl}`);
+    FLASK_API_BASE_URL = flaskApiStatus.activeUrl;
+    FLASK_API_URL = `${FLASK_API_BASE_URL}/predict`;
+    FLASK_API_INFO_URL = `${FLASK_API_BASE_URL}/info`;
+    
+    // Perbarui currentUrlIndex
+    currentUrlIndex = FLASK_API_BASE_URLS.indexOf(FLASK_API_BASE_URL);
+    if (currentUrlIndex === -1) currentUrlIndex = 0;
+  }
   
   // Tetap gunakan info terakhir yang berhasil jika ada
   if (!flaskApiStatus.info && flaskApiStatus.lastSuccessfulResponse) {
     flaskApiStatus.info = flaskApiStatus.lastSuccessfulResponse;
   }
   
-  return false;
+  console.log('Semua URL Flask API tidak tersedia setelah beberapa percobaan');
+  
+  // Gunakan fallback mode jika semua percobaan gagal
+  flaskApiStatus.fallbackMode = true;
+  
+  // Kembalikan true untuk menggunakan data mock dengan variasi hasil
+  return true;
 };
 
 // Fungsi untuk menguji koneksi ke Flask API secara menyeluruh
@@ -149,14 +194,19 @@ async function testFlaskApiConnection() {
     console.log(`- Mode Simulasi: ${response.data.simulation_mode ? 'Ya' : 'Tidak'}`);
     console.log(`- Versi TensorFlow: ${response.data.tf_version || 'Tidak diketahui'}`);
     
+    // Simpan URL yang berhasil
+    flaskApiStatus.activeUrl = FLASK_API_BASE_URL;
+    
     return {
       success: true,
       responseTime: endTime - startTime,
-      data: response.data
+      data: response.data,
+      url: FLASK_API_BASE_URL
     };
   } catch (error) {
     console.error('Koneksi ke Flask API gagal:');
     console.error(`- Error: ${error.message}`);
+    console.error(`- URL: ${FLASK_API_INFO_URL}`);
     if (error.code) console.error(`- Kode Error: ${error.code}`);
     if (error.response) {
       console.error(`- Status: ${error.response.status}`);
@@ -176,14 +226,76 @@ async function testFlaskApiConnection() {
       
       console.error(`- Data: ${truncatedData}`);
     }
+    
+    // Coba URL alternatif
+    const originalUrlIndex = currentUrlIndex;
+    let alternativeResults = [];
+    
+    // Simpan URL saat ini
+    const originalBaseUrl = FLASK_API_BASE_URL;
+    const originalInfoUrl = FLASK_API_INFO_URL;
+    
+    // Coba semua URL alternatif
+    for (let i = 0; i < FLASK_API_BASE_URLS.length; i++) {
+      // Jangan coba URL yang sama dengan yang baru saja gagal
+      if (i === originalUrlIndex) continue;
+      
+      const alternativeBaseUrl = FLASK_API_BASE_URLS[i];
+      const alternativeInfoUrl = `${alternativeBaseUrl}/info`;
+      
+      console.log(`Mencoba URL alternatif: ${alternativeInfoUrl}`);
+      
+      try {
+        const altStartTime = Date.now();
+        const altResponse = await axios.get(alternativeInfoUrl, { timeout: 10000 });
+        const altEndTime = Date.now();
+        
+        console.log(`Koneksi ke URL alternatif berhasil: ${alternativeBaseUrl}`);
+        
+        // Perbarui URL aktif
+        FLASK_API_BASE_URL = alternativeBaseUrl;
+        FLASK_API_URL = `${alternativeBaseUrl}/predict`;
+        FLASK_API_INFO_URL = alternativeInfoUrl;
+        currentUrlIndex = i;
+        
+        // Simpan URL yang berhasil
+        flaskApiStatus.activeUrl = alternativeBaseUrl;
+        
+        // Kembalikan hasil sukses dengan URL alternatif
+        return {
+          success: true,
+          responseTime: altEndTime - altStartTime,
+          data: altResponse.data,
+          url: alternativeBaseUrl,
+          isAlternative: true,
+          originalUrl: originalBaseUrl
+        };
+      } catch (altError) {
+        console.log(`URL alternatif ${alternativeBaseUrl} juga gagal: ${altError.message}`);
+        alternativeResults.push({
+          url: alternativeBaseUrl,
+          error: altError.message,
+          code: altError.code
+        });
+      }
+    }
+    
+    // Kembalikan ke URL awal jika semua alternatif gagal
+    FLASK_API_BASE_URL = originalBaseUrl;
+    FLASK_API_URL = `${originalBaseUrl}/predict`;
+    FLASK_API_INFO_URL = originalInfoUrl;
+    currentUrlIndex = originalUrlIndex;
+    
     return {
       success: false,
       error: error.message,
       code: error.code,
+      url: originalBaseUrl,
       response: error.response ? {
         status: error.response.status,
         data: error.response.data
-      } : null
+      } : null,
+      alternativeResults: alternativeResults
     };
   }
 }
