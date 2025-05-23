@@ -75,11 +75,29 @@ app.use(cors({
   credentials: true,
 }));
 
-// Middleware tambahan untuk menangani CORS
+// Middleware tambahan untuk menangani CORS dengan origins yang sama
 app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', '*');
+  const allowedOrigins = [
+    process.env.VITE_FRONTEND_URL, 
+    process.env.VITE_DASHBOARD_URL, 
+    process.env.FLASK_API_URL,
+    'http://localhost:5173', 
+    'http://localhost:3000',
+    'http://localhost:5001',
+    'https://retinascan.onrender.com',
+    'https://retinascan-dashboard.onrender.com',
+    'https://retinascan-backend-eszo.onrender.com',
+    'https://flask-service-1qmz.onrender.com'
+  ];
+  
+  const origin = req.headers.origin;
+  if (allowedOrigins.includes(origin)) {
+    res.header('Access-Control-Allow-Origin', origin);
+  }
+  
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+  res.header('Access-Control-Allow-Credentials', 'true');
   
   // Intercept OPTIONS method
   if (req.method === 'OPTIONS') {
