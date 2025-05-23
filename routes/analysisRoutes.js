@@ -1,4 +1,5 @@
 import express from 'express';
+import axios from 'axios'; // Tambahkan import axios
 import { uploadImage, getUserAnalyses, getAnalysisById, getFlaskApiStatus, deleteAnalysis, testFlaskConnection } from '../controllers/analysisController.js';
 import { authMiddleware } from '../middleware/authMiddleware.js';
 import upload from '../middleware/uploadMiddleware.js';
