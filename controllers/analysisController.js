@@ -114,6 +114,14 @@ const checkFlaskApiStatus = async () => {
   flaskApiStatus.lastCheck = Date.now();
   flaskApiStatus.checked = true;
   
+  // Jika Flask API tidak tersedia setelah beberapa percobaan, aktifkan mode fallback
+  if (flaskApiStatus.retryCount > 3) {
+    console.log('Flask API tidak tersedia setelah beberapa percobaan, mengaktifkan mode fallback');
+    flaskApiStatus.fallbackMode = true;
+    // Tetap kembalikan true untuk memungkinkan aplikasi berjalan dengan mode fallback
+    return true;
+  }
+  
   // Tetap gunakan info terakhir yang berhasil jika ada
   if (!flaskApiStatus.info && flaskApiStatus.lastSuccessfulResponse) {
     flaskApiStatus.info = flaskApiStatus.lastSuccessfulResponse;
