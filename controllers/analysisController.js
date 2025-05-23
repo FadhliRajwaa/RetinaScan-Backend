@@ -118,6 +118,26 @@ const checkFlaskApiStatus = async () => {
   if (flaskApiStatus.retryCount > 3) {
     console.log('Flask API tidak tersedia setelah beberapa percobaan, mengaktifkan mode fallback');
     flaskApiStatus.fallbackMode = true;
+    
+    // Coba satu kali lagi dengan endpoint test
+    try {
+      console.log('Mencoba koneksi ke endpoint test Flask API...');
+      const testResponse = await axios.get(`${FLASK_API_BASE_URL}/test`, {
+        timeout: 5000
+      });
+      
+      if (testResponse.status === 200) {
+        console.log('Endpoint test Flask API berfungsi!');
+        console.log(`Data: ${JSON.stringify(testResponse.data)}`);
+        flaskApiStatus.available = true;
+        flaskApiStatus.lastCheck = Date.now();
+        flaskApiStatus.checked = true;
+        return true;
+      }
+    } catch (testError) {
+      console.log('Endpoint test Flask API juga tidak tersedia');
+    }
+    
     // Tetap kembalikan true untuk memungkinkan aplikasi berjalan dengan mode fallback
     return true;
   }
