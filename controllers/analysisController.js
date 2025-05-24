@@ -86,7 +86,6 @@ const checkFlaskApiStatus = async () => {
           flaskApiStatus.activeUrl = FLASK_API_BASE_URL; // Simpan URL yang aktif
           
           console.log('Flask API tersedia:', flaskApiStatus.info.model_name || 'Tidak diketahui');
-          console.log('Mode simulasi:', flaskApiStatus.info.simulation_mode ? 'Ya' : 'Tidak');
           console.log('Kelas model:', flaskApiStatus.info.classes ? flaskApiStatus.info.classes.join(', ') : 'Tidak diketahui');
           console.log('Versi API:', flaskApiStatus.info.api_version || '1.0.0');
           
@@ -168,31 +167,10 @@ const checkFlaskApiStatus = async () => {
     if (currentUrlIndex === -1) currentUrlIndex = 0;
   }
   
-  // Tetap gunakan info terakhir yang berhasil jika ada
-  if (!flaskApiStatus.info && flaskApiStatus.lastSuccessfulResponse) {
-    flaskApiStatus.info = flaskApiStatus.lastSuccessfulResponse;
-  }
-  
   console.log('Semua URL Flask API tidak tersedia setelah beberapa percobaan');
   
-  // Gunakan fallback mode jika semua percobaan gagal
-  flaskApiStatus.fallbackMode = true;
-  flaskApiStatus.available = true; // Ubah menjadi true untuk mengaktifkan mode simulasi
-  
-  // Tambahkan informasi simulasi
-  flaskApiStatus.info = {
-    simulation_mode: true,
-    status: 'online (simulation)',
-    service: 'retinopathy-api',
-    model_name: 'Retinopathy Detection Model (Simulated)',
-    classes: ['No DR', 'Mild', 'Moderate', 'Severe', 'Proliferative DR'],
-    api_version: '1.0.1'
-  };
-  
-  console.log('Mode simulasi diaktifkan karena Flask API tidak tersedia');
-  
-  // Kembalikan true untuk menggunakan data mock dengan variasi hasil
-  return true;
+  // Kembalikan false karena Flask API tidak tersedia
+  return false;
 };
 
 // Fungsi untuk menguji koneksi ke Flask API secara menyeluruh
@@ -389,7 +367,7 @@ export const uploadImage = async (req, res, next) => {
     let isSimulation = false;
     let apiUrlUsed = null;
     
-    // Jika Flask API tersedia dan tidak dalam fallback mode, kirim gambar untuk analisis
+    // Periksa apakah Flask API tersedia dan tidak dalam fallback mode, kirim gambar untuk analisis
     if (apiAvailable && !flaskApiStatus.fallbackMode) {
       try {
         // Buat form data untuk dikirim ke Flask API
@@ -429,12 +407,6 @@ export const uploadImage = async (req, res, next) => {
                 ? `{severity: ${predictionResult.severity || predictionResult.class}, confidence: ${predictionResult.confidence}}` 
                 : predictionResult);
             success = true;
-            
-            // Tampilkan peringatan jika menggunakan mode simulasi
-            if (predictionResult.raw_prediction && predictionResult.raw_prediction.is_simulation) {
-              console.warn('PERHATIAN: Menggunakan hasil simulasi dari Flask API, bukan prediksi model yang sebenarnya');
-              isSimulation = true;
-            }
 
             // Map kelas dari Flask API ke format yang diharapkan frontend
             if (predictionResult.class) {
