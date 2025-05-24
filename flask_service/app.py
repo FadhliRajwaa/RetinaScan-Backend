@@ -12,17 +12,48 @@ import io
 from pymongo import MongoClient
 from dotenv import load_dotenv
 from bson.objectid import ObjectId
+import gc
+import logging
 
 # Load environment variables
 load_dotenv()
 
+# Kurangi log TensorFlow
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'  # 0=DEBUG, 1=INFO, 2=WARNING, 3=ERROR
+logging.getLogger('tensorflow').setLevel(logging.ERROR)
+
+# Konfigurasi TensorFlow untuk membatasi penggunaan memori
+gpus = tf.config.list_physical_devices('GPU')
+if gpus:
+    try:
+        # Nonaktifkan GPU untuk menghindari error CUDA
+        tf.config.set_visible_devices([], 'GPU')
+        print("GPU dinonaktifkan untuk menghindari error CUDA")
+    except Exception as e:
+        print(f"Error menonaktifkan GPU: {e}")
+else:
+    print("Tidak ada GPU yang terdeteksi")
+
 app = Flask(__name__)
 # Aktifkan CORS dengan konfigurasi yang lebih permisif
-CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True, allow_headers=["Content-Type", "Authorization"])
+CORS(app, 
+     resources={r"/*": {"origins": "*"}}, 
+     supports_credentials=True, 
+     allow_headers=["Content-Type", "Authorization", "X-Requested-With", "Accept", "Origin"],
+     methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+     max_age=86400)
+
+# Tambahkan header CORS tambahan untuk setiap respons
+@app.after_request
+def after_request(response):
+    response.headers.add('Access-Control-Allow-Origin', '*')
+    response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization,X-Requested-With,Accept,Origin')
+    response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
+    response.headers.add('Access-Control-Allow-Credentials', 'true')
+    return response
 
 # Konfigurasi model dan status
 MODEL_LOADED = False
-SIMULATION_MODE = False
 MODEL = None
 ERROR_MESSAGE = None
 
@@ -46,7 +77,7 @@ CLASS_NAMES = ['No DR', 'Mild', 'Moderate', 'Severe', 'Proliferative DR']
 
 # Load Retinopathy model dengan penanganan error yang lebih baik
 def load_ml_model():
-    global MODEL, MODEL_LOADED, SIMULATION_MODE, ERROR_MESSAGE
+    global MODEL, MODEL_LOADED, ERROR_MESSAGE
     
     # Coba beberapa path yang mungkin untuk model
     possible_paths = [
@@ -56,12 +87,27 @@ def load_ml_model():
         os.path.join(os.getcwd(), 'model-Retinopaty.h5')
     ]
     
+    # Jika environment variable MODEL_PATH diatur, tambahkan ke daftar
+    if os.environ.get('MODEL_PATH'):
+        possible_paths.insert(0, os.environ.get('MODEL_PATH'))
+    
     for model_path in possible_paths:
         try:
             print(f"Trying to load model from: {model_path}")
             if os.path.exists(model_path):
                 print(f"Model file found at {model_path}, loading...")
-                MODEL = load_model(model_path)
+                
+                # Gunakan opsi lebih efisien untuk memuat model
+                try:
+                    # Coba dengan compile=False untuk mempercepat loading
+                    MODEL = load_model(model_path, compile=False)
+                    print("Model loaded with compile=False")
+                except Exception as e1:
+                    print(f"Error loading with compile=False: {str(e1)}")
+                    # Fallback ke loading normal
+                    MODEL = load_model(model_path)
+                    print("Model loaded with default options")
+                
                 MODEL_LOADED = True
                 print("Model loaded successfully!")
                 return
@@ -71,47 +117,44 @@ def load_ml_model():
             print(f"Error loading model from {model_path}: {str(e)}")
             traceback.print_exc(file=sys.stdout)
     
-    # Jika semua path gagal, aktifkan mode simulasi
-    print("All model loading attempts failed, activating SIMULATION MODE")
-    SIMULATION_MODE = True
-    ERROR_MESSAGE = "Model could not be loaded, using simulation mode"
+    # Jika semua path gagal, catat error
+    print("All model loading attempts failed")
+    ERROR_MESSAGE = "Model could not be loaded"
+    MODEL_LOADED = False
 
 # Panggil fungsi load model
-load_ml_model()
+try:
+    load_ml_model()
+except Exception as e:
+    print(f"Critical error in load_ml_model: {str(e)}")
+    traceback.print_exc(file=sys.stdout)
+    ERROR_MESSAGE = f"Critical error loading model: {str(e)}"
 
 def prepare_image(img, target_size=(224, 224)):
+    """
+    Mempersiapkan gambar untuk prediksi
+    """
+    # Pastikan gambar dalam mode RGB
     if img.mode != 'RGB':
         img = img.convert('RGB')
+    
+    # Resize gambar
     img = img.resize(target_size)
+    
+    # Konversi ke array
     img_array = image.img_to_array(img)
+    
+    # Expand dimensions
     img_array = np.expand_dims(img_array, axis=0)
+    
+    # Normalisasi
     img_array = img_array / 255.0
+    
     return img_array
-
-def simulate_prediction():
-    """Fungsi untuk mensimulasikan prediksi ketika model tidak tersedia"""
-    # Pilih kelas secara acak dengan distribusi yang masuk akal
-    class_probabilities = [0.5, 0.2, 0.15, 0.1, 0.05]  # Lebih banyak kasus normal
-    class_idx = np.random.choice(len(CLASS_NAMES), p=class_probabilities)
-    class_name = CLASS_NAMES[class_idx]
-    
-    # Buat confidence yang masuk akal berdasarkan kelas
-    if class_idx == 0:  # No DR
-        confidence = np.random.uniform(0.85, 0.99)
-    elif class_idx == 1:  # Mild
-        confidence = np.random.uniform(0.75, 0.9)
-    elif class_idx == 2:  # Moderate
-        confidence = np.random.uniform(0.7, 0.85)
-    elif class_idx == 3:  # Severe
-        confidence = np.random.uniform(0.75, 0.9)
-    else:  # Proliferative DR
-        confidence = np.random.uniform(0.8, 0.95)
-    
-    return class_name, float(confidence)
 
 @app.route('/predict', methods=['POST'])
 def predict():
-    if not MODEL_LOADED and not SIMULATION_MODE:
+    if not MODEL_LOADED:
         return jsonify({'error': 'Model not loaded properly'}), 500
         
     if 'file' not in request.files:
@@ -124,33 +167,34 @@ def predict():
     try:
         prediction_id = None
         
-        # Jika model dimuat, gunakan model untuk prediksi
-        if MODEL_LOADED:
-            # Konversi FileStorage ke BytesIO
-            file_bytes = file.read()
-            img_io = io.BytesIO(file_bytes)
-            
-            # Reset pointer file untuk penggunaan selanjutnya jika diperlukan
-            file.seek(0)
-            
-            # Gunakan BytesIO untuk load_img
-            img = image.load_img(img_io, target_size=(224, 224))
-            img_array = prepare_image(img)
-            preds = MODEL.predict(img_array)
-            class_idx = np.argmax(preds[0])
-            class_name = CLASS_NAMES[class_idx]
-            confidence = float(np.max(preds[0]))
-        # Jika tidak, gunakan mode simulasi
-        else:
-            class_name, confidence = simulate_prediction()
+        # Konversi FileStorage ke BytesIO
+        file_bytes = file.read()
+        img_io = io.BytesIO(file_bytes)
+        
+        # Reset pointer file untuk penggunaan selanjutnya jika diperlukan
+        file.seek(0)
+        
+        # Gunakan BytesIO untuk load_img
+        img = image.load_img(img_io, target_size=(224, 224))
+        img_array = prepare_image(img)
+        
+        # Prediksi dengan model
+        preds = MODEL.predict(img_array, verbose=0)
+        class_idx = np.argmax(preds[0])
+        class_name = CLASS_NAMES[class_idx]
+        confidence = float(np.max(preds[0]))
+        
+        # Bersihkan memori
+        del img_array
+        del preds
+        gc.collect()
         
         # Save prediction to MongoDB if available
         prediction_record = {
             'class': class_name,
             'confidence': confidence,
             'filename': file.filename,
-            'timestamp': datetime.datetime.now(),
-            'simulation_mode': SIMULATION_MODE
+            'timestamp': datetime.datetime.now()
         }
         
         if predictions_collection:
@@ -160,35 +204,18 @@ def predict():
             except Exception as db_error:
                 print(f"Error saving to MongoDB: {str(db_error)}")
         
+        # Jalankan garbage collection untuk membebaskan memori
+        gc.collect()
+        
         return jsonify({
             'id': prediction_id,
             'class': class_name, 
-            'confidence': confidence,
-            'simulation_mode': SIMULATION_MODE,
-            'raw_prediction': {
-                'is_simulation': SIMULATION_MODE
-            }
+            'confidence': confidence
         })
     except Exception as e:
         print(f"Error during prediction: {str(e)}")
         traceback.print_exc(file=sys.stdout)
-        
-        # Fallback ke simulasi jika terjadi error
-        try:
-            class_name, confidence = simulate_prediction()
-            return jsonify({
-                'id': None,
-                'class': class_name, 
-                'confidence': confidence,
-                'simulation_mode': True,
-                'error_info': str(e),
-                'raw_prediction': {
-                    'is_simulation': True,
-                    'fallback_due_to_error': True
-                }
-            })
-        except:
-            return jsonify({'error': str(e)}), 500
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/predictions', methods=['GET'])
 def get_predictions():
@@ -264,47 +291,55 @@ def test_model():
     else:
         return jsonify({
             'status': 'error',
-            'message': ERROR_MESSAGE or 'Model failed to load',
-            'simulation_mode': SIMULATION_MODE
-        }), 200  # Return 200 even in simulation mode
+            'message': ERROR_MESSAGE or 'Model failed to load'
+        }), 500
+
+@app.route('/health', methods=['GET', 'HEAD'])
+def health_check_lightweight():
+    """
+    Endpoint health check ringan khusus untuk monitoring Render
+    """
+    return jsonify({
+        'status': 'online',
+        'service': 'retinopathy-api-health',
+        'timestamp': datetime.datetime.now().isoformat()
+    }), 200
 
 @app.route('/', methods=['GET'])
 def health_check():
-    """Simple health check endpoint"""
-    # Cek status sistem
-    system_info = {
-        'python_version': sys.version,
-        'tensorflow_version': tf.__version__,
-        'working_directory': os.getcwd(),
-        'environment': {k: v for k, v in os.environ.items() if k.startswith(('TF_', 'PYTHON', 'PATH'))},
-    }
-    
-    # Cek status model
-    model_info = {}
-    if MODEL_LOADED:
+    """
+    Endpoint health check utama dengan informasi detail tentang API
+    """
+    try:
+        memory_info = {}
         try:
-            model_info = {
-                'model_type': str(type(MODEL)),
-                'input_shape': str(MODEL.input_shape),
-                'output_shape': str(MODEL.output_shape),
-                'layers_count': len(MODEL.layers),
+            import psutil
+            process = psutil.Process(os.getpid())
+            memory_info = {
+                'rss_mb': process.memory_info().rss / 1024 / 1024,
+                'vms_mb': process.memory_info().vms / 1024 / 1024
             }
-        except:
-            model_info = {'model_info_error': 'Could not retrieve model details'}
-    
-    return jsonify({
-        'status': 'online',
-        'service': 'retinopathy-api',
-        'model_loaded': MODEL_LOADED,
-        'model_name': 'Retinopathy Detection Model',
-        'model_info': model_info if MODEL_LOADED else None,
-        'classes': CLASS_NAMES,
-        'tf_version': tf.__version__,
-        'simulation_mode': SIMULATION_MODE,
-        'api_version': '1.0.1',
-        'error_message': ERROR_MESSAGE,
-        'system_info': system_info
-    })
+        except ImportError:
+            memory_info = {'status': 'psutil not available'}
+        
+        return jsonify({
+            'status': 'online',
+            'service': 'retinopathy-api',
+            'model_name': 'Retinopathy Detection Model',
+            'model_loaded': MODEL_LOADED,
+            'error_message': ERROR_MESSAGE,
+            'classes': CLASS_NAMES,
+            'api_version': '1.0.1',
+            'tf_version': tf.__version__,
+            'memory_usage': memory_info,
+            'timestamp': datetime.datetime.now().isoformat()
+        })
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'error': str(e),
+            'service': 'retinopathy-api'
+        }), 500
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))

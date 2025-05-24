@@ -3,7 +3,9 @@ flask_cors
 numpy
 pymongo
 python-dotenv
-tensorflow
+tensorflow-cpu
 gunicorn
 Pillow
 werkzeug
+requests
+psutil

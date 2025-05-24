@@ -1,0 +1,22 @@
+# Konfigurasi Server
+PORT=10000
+FLASK_ENV=production
+FLASK_DEBUG=0
+PYTHONUNBUFFERED=true
+
+# Konfigurasi TensorFlow
+TF_CPP_MIN_LOG_LEVEL=2
+TF_FORCE_GPU_ALLOW_GROWTH=true
+
+# Path Model
+MODEL_PATH=/opt/render/project/src/model-Retinopaty.h5
+
+# Konfigurasi MongoDB
+MONGO_URI=mongodb+srv://rajwaarahmana45:123abc789@cluster0.cp7fh.mongodb.net/RetinaScan?retryWrites=true&w=majority
+
+# Konfigurasi Gunicorn
+GUNICORN_CMD_ARGS="--log-level debug --timeout 120 --workers 1 --threads 4 --max-requests 5 --keep-alive 5"
+
+# Konfigurasi Aplikasi
+SIMULATION_MODE_ENABLED=false
+API_VERSION=1.0.1 
