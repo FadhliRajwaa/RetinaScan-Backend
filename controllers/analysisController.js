@@ -62,39 +62,46 @@ const checkFlaskApiStatus = async () => {
   
   while (!allUrlsTried) {
     // Implementasi retry logic untuk URL saat ini
-    let retries = 3;
+    let retries = 5; // Tingkatkan jumlah retry
     let success = false;
     let lastError = null;
     
     while (retries > 0 && !success) {
       try {
-        console.log(`Mencoba koneksi ke Flask API di ${FLASK_API_BASE_URL} (percobaan ke-${4-retries}/3)...`);
+        console.log(`Mencoba koneksi ke Flask API di ${FLASK_API_BASE_URL} (percobaan ke-${6-retries}/5)...`);
         
         const response = await axios.get(FLASK_API_INFO_URL, {
-          timeout: 15000 // Timeout yang lebih panjang untuk mengakomodasi cold start
+          timeout: 30000 // Timeout yang lebih panjang untuk mengakomodasi cold start (30 detik)
         });
         
-        flaskApiStatus.available = true;
-        flaskApiStatus.info = response.data;
-        flaskApiStatus.lastSuccessfulResponse = response.data;
-        flaskApiStatus.lastCheck = Date.now();
-        flaskApiStatus.checked = true;
-        flaskApiStatus.retryCount = 0; // Reset retry counter
-        flaskApiStatus.fallbackMode = false; // Pastikan fallback mode dinonaktifkan
-        flaskApiStatus.activeUrl = FLASK_API_BASE_URL; // Simpan URL yang aktif
-        
-        console.log('Flask API tersedia:', flaskApiStatus.info.model_name || 'Tidak diketahui');
-        console.log('Mode simulasi:', flaskApiStatus.info.simulation_mode ? 'Ya' : 'Tidak');
-        console.log('Kelas model:', flaskApiStatus.info.classes ? flaskApiStatus.info.classes.join(', ') : 'Tidak diketahui');
-        console.log('Versi API:', flaskApiStatus.info.api_version || '1.0.0');
-        
-        success = true;
-        return true;
+        // Verifikasi bahwa respons memiliki format yang diharapkan
+        if (response.data && (response.data.status === 'online' || response.data.service === 'retinopathy-api')) {
+          flaskApiStatus.available = true;
+          flaskApiStatus.info = response.data;
+          flaskApiStatus.lastSuccessfulResponse = response.data;
+          flaskApiStatus.lastCheck = Date.now();
+          flaskApiStatus.checked = true;
+          flaskApiStatus.retryCount = 0; // Reset retry counter
+          flaskApiStatus.fallbackMode = false; // Pastikan fallback mode dinonaktifkan
+          flaskApiStatus.activeUrl = FLASK_API_BASE_URL; // Simpan URL yang aktif
+          
+          console.log('Flask API tersedia:', flaskApiStatus.info.model_name || 'Tidak diketahui');
+          console.log('Mode simulasi:', flaskApiStatus.info.simulation_mode ? 'Ya' : 'Tidak');
+          console.log('Kelas model:', flaskApiStatus.info.classes ? flaskApiStatus.info.classes.join(', ') : 'Tidak diketahui');
+          console.log('Versi API:', flaskApiStatus.info.api_version || '1.0.0');
+          
+          success = true;
+          return true;
+        } else {
+          console.log('Flask API merespons tetapi format tidak sesuai:', response.data);
+          lastError = new Error('Invalid API response format');
+          retries--;
+        }
       } catch (error) {
         lastError = error;
         
         // Log error details
-        console.error(`Flask API tidak tersedia di ${FLASK_API_BASE_URL} (percobaan ke-${4-retries}/3):`, error.message);
+        console.error(`Flask API tidak tersedia di ${FLASK_API_BASE_URL} (percobaan ke-${6-retries}/5):`, error.message);
         
         if (error.response) {
           console.error('Response status:', error.response.status);
@@ -120,10 +127,10 @@ const checkFlaskApiStatus = async () => {
         // Deteksi cold start (502 Bad Gateway)
         if (error.response && error.response.status === 502) {
           console.log('Terdeteksi cold start pada Render free tier. Menunggu lebih lama...');
-          await new Promise(resolve => setTimeout(resolve, 10000)); // Wait 10 seconds
+          await new Promise(resolve => setTimeout(resolve, 15000)); // Wait 15 seconds for cold start
         } else {
           // Delay standar antara percobaan
-          await new Promise(resolve => setTimeout(resolve, 3000)); // Wait 3 seconds
+          await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5 seconds between retries
         }
         
         retries--;
