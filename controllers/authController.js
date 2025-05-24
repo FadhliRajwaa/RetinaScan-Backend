@@ -52,46 +52,17 @@ export const login = async (req, res, next) => {
   }
   
   try {
-    // Tambahkan rate limiting sederhana (implementasi lengkap memerlukan Redis atau solusi lain)
-    // Ini hanya contoh sederhana
-    const loginAttempts = global.loginAttempts || {};
-    const ipAddress = req.ip || 'unknown';
-    const now = Date.now();
+    // Mencari user dengan select untuk mengambil hanya field yang diperlukan
+    const user = await User.findOne({ email }).select('+password name email fullName');
     
-    // Bersihkan entri lama (lebih dari 15 menit)
-    Object.keys(loginAttempts).forEach(ip => {
-      if (now - loginAttempts[ip].timestamp > 15 * 60 * 1000) {
-        delete loginAttempts[ip];
-      }
-    });
-    
-    // Periksa jumlah percobaan
-    if (loginAttempts[ipAddress] && loginAttempts[ipAddress].count >= 5 && 
-        now - loginAttempts[ipAddress].timestamp < 15 * 60 * 1000) {
-      return res.status(429).json({ 
-        message: 'Terlalu banyak percobaan login. Coba lagi nanti.',
-        retryAfter: Math.ceil((loginAttempts[ipAddress].timestamp + 15 * 60 * 1000 - now) / 1000)
-      });
-    }
-    
-    const user = await User.findOne({ email });
-    if (!user || !(await user.matchPassword(password))) {
-      // Catat percobaan login yang gagal
-      if (!loginAttempts[ipAddress]) {
-        loginAttempts[ipAddress] = { count: 1, timestamp: now };
-      } else {
-        loginAttempts[ipAddress].count++;
-        loginAttempts[ipAddress].timestamp = now;
-      }
-      global.loginAttempts = loginAttempts;
-      
+    if (!user) {
       return res.status(401).json({ message: 'Email atau kata sandi salah' });
     }
     
-    // Reset percobaan login jika berhasil
-    if (loginAttempts[ipAddress]) {
-      delete loginAttempts[ipAddress];
-      global.loginAttempts = loginAttempts;
+    // Verifikasi password
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) {
+      return res.status(401).json({ message: 'Email atau kata sandi salah' });
     }
     
     // Buat token dengan expiry yang lebih pendek dan tambahkan informasi penting
@@ -105,14 +76,17 @@ export const login = async (req, res, next) => {
       { expiresIn: '1d' }
     );
     
+    // Hapus password dari respons
+    const userResponse = {
+      id: user._id,
+      name: user.name,
+      email: user.email,
+      fullName: user.fullName || user.name
+    };
+    
     res.json({ 
       token, 
-      user: { 
-        id: user._id, 
-        name: user.name, 
-        email: user.email,
-        fullName: user.fullName || user.name
-      },
+      user: userResponse,
       expiresIn: 86400 // 24 jam dalam detik
     });
   } catch (error) {
