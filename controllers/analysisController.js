@@ -48,9 +48,9 @@ let flaskApiStatus = {
 
 // Periksa apakah Flask API tersedia dengan mekanisme retry yang lebih robust
 const checkFlaskApiStatus = async () => {
-  // Jika sudah diperiksa dalam 30 detik terakhir, gunakan hasil cache
-  // Kurangi waktu cache dari 1 menit menjadi 30 detik untuk memastikan status lebih akurat
-  if (flaskApiStatus.checked && Date.now() - flaskApiStatus.lastCheck < 30000) {
+  // Jika sudah diperiksa dalam 60 detik terakhir, gunakan hasil cache
+  // Tingkatkan waktu cache dari 30 detik menjadi 60 detik untuk mengurangi pemeriksaan berulang
+  if (flaskApiStatus.checked && Date.now() - flaskApiStatus.lastCheck < 60000) {
     return flaskApiStatus.available;
   }
   
@@ -62,16 +62,16 @@ const checkFlaskApiStatus = async () => {
   
   while (!allUrlsTried) {
     // Implementasi retry logic untuk URL saat ini
-    let retries = 5; // Tingkatkan jumlah retry
+    let retries = 3; // Kurangi jumlah retry dari 5 menjadi 3
     let success = false;
     let lastError = null;
     
     while (retries > 0 && !success) {
       try {
-        console.log(`Mencoba koneksi ke Flask API di ${FLASK_API_BASE_URL} (percobaan ke-${6-retries}/5)...`);
+        console.log(`Mencoba koneksi ke Flask API di ${FLASK_API_BASE_URL} (percobaan ke-${4-retries}/3)...`);
         
         const response = await axios.get(FLASK_API_INFO_URL, {
-          timeout: 30000 // Timeout yang lebih panjang untuk mengakomodasi cold start (30 detik)
+          timeout: 15000 // Kurangi timeout dari 30 detik menjadi 15 detik
         });
         
         // Verifikasi bahwa respons memiliki format yang diharapkan
@@ -101,7 +101,7 @@ const checkFlaskApiStatus = async () => {
         lastError = error;
         
         // Log error details
-        console.error(`Flask API tidak tersedia di ${FLASK_API_BASE_URL} (percobaan ke-${6-retries}/5):`, error.message);
+        console.error(`Flask API tidak tersedia di ${FLASK_API_BASE_URL} (percobaan ke-${4-retries}/3):`, error.message);
         
         if (error.response) {
           console.error('Response status:', error.response.status);
@@ -127,10 +127,10 @@ const checkFlaskApiStatus = async () => {
         // Deteksi cold start (502 Bad Gateway)
         if (error.response && error.response.status === 502) {
           console.log('Terdeteksi cold start pada Render free tier. Menunggu lebih lama...');
-          await new Promise(resolve => setTimeout(resolve, 15000)); // Wait 15 seconds for cold start
+          await new Promise(resolve => setTimeout(resolve, 10000)); // Kurangi waktu tunggu dari 15 detik menjadi 10 detik
         } else {
           // Delay standar antara percobaan
-          await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5 seconds between retries
+          await new Promise(resolve => setTimeout(resolve, 3000)); // Kurangi waktu tunggu dari 5 detik menjadi 3 detik
         }
         
         retries--;
@@ -382,14 +382,15 @@ export const uploadImage = async (req, res, next) => {
           try {
             console.log(`Mencoba request ke Flask API (sisa percobaan: ${retries})...`);
             
-            // Kirim request ke Flask API dengan timeout yang lebih panjang untuk cold start
+            // Kirim request ke Flask API dengan timeout yang lebih pendek untuk respons yang lebih cepat
+            // Kurangi timeout dari 3 menit menjadi 60 detik untuk respons yang lebih cepat
             const response = await axios.post(FLASK_API_URL, formData, {
               headers: {
                 ...formData.getHeaders(),
               },
               maxContentLength: Infinity,
               maxBodyLength: Infinity,
-              timeout: 180000 // 3 menit timeout untuk mengakomodasi cold start
+              timeout: 60000 // 60 detik timeout (dikurangi dari 180000/3 menit)
             });
             
             // Ambil hasil prediksi
@@ -397,7 +398,7 @@ export const uploadImage = async (req, res, next) => {
             // Tampilkan hasil prediksi dengan format yang lebih ringkas
             console.log('Hasil prediksi dari Flask API:', 
               typeof predictionResult === 'object' 
-                ? `{severity: ${predictionResult.severity}, confidence: ${predictionResult.confidence}}` 
+                ? `{severity: ${predictionResult.severity || predictionResult.class}, confidence: ${predictionResult.confidence}}` 
                 : predictionResult);
             success = true;
             
@@ -532,13 +533,13 @@ export const uploadImage = async (req, res, next) => {
                 coldStartDetected = true;
               }
               
-              // Gunakan delay yang lebih lama untuk cold start (30 detik)
-              console.log('Menunggu 30 detik untuk cold start...');
-              await new Promise(resolve => setTimeout(resolve, 30000));
+              // Gunakan delay yang lebih pendek untuk cold start (15 detik, dikurangi dari 30 detik)
+              console.log('Menunggu 15 detik untuk cold start...');
+              await new Promise(resolve => setTimeout(resolve, 15000));
             } else {
-              // Delay standar untuk error umum
-              console.log(`Error biasa, mencoba kembali dalam 5 detik (${retries} percobaan tersisa)...`);
-              await new Promise(resolve => setTimeout(resolve, 5000));
+              // Delay standar untuk error umum (kurangi dari 5 detik menjadi 3 detik)
+              console.log(`Error biasa, mencoba kembali dalam 3 detik (${retries} percobaan tersisa)...`);
+              await new Promise(resolve => setTimeout(resolve, 3000));
             }
             
             retries--;
@@ -676,6 +677,7 @@ export const uploadImage = async (req, res, next) => {
         else mimeType = 'image/jpeg'; // Default to JPEG
       }
       
+      // Gunakan buffer langsung tanpa konversi ke string terlebih dahulu untuk menghemat memori
       const imageBase64 = `data:${mimeType};base64,${imageBuffer.toString('base64')}`;
       
       // Hapus file fisik setelah dikonversi ke base64 untuk konsistensi penyimpanan

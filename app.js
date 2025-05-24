@@ -17,6 +17,7 @@ import mongoose from 'mongoose';
 import RetinaAnalysis from './models/RetinaAnalysis.js';
 import User from './models/User.js';
 import Patient from './models/Patient.js';
+import compression from 'express-compression'; // Tambahkan kompresi untuk respons lebih cepat
 
 // Konfigurasi environment variables
 dotenv.config();
@@ -26,6 +27,14 @@ global.startTime = Date.now();
 
 const app = express();
 const httpServer = createServer(app);
+
+// Tambahkan middleware kompresi untuk mempercepat respons
+app.use(compression({ brotli: { enabled: true, zlib: {} } }));
+
+// Tingkatkan batas ukuran request untuk upload gambar
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+
 const io = new Server(httpServer, {
   cors: {
     origin: [
@@ -42,7 +51,11 @@ const io = new Server(httpServer, {
     ],
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
-    credentials: true
+    credentials: true,
+    // Tambahkan pengaturan untuk mempercepat koneksi socket
+    transports: ['websocket', 'polling'],
+    pingTimeout: 30000,
+    pingInterval: 25000
   }
 });
 
@@ -73,6 +86,8 @@ app.use(cors({
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: true,
+  // Tambahkan cache untuk preflight requests
+  maxAge: 86400 // 24 jam
 }));
 
 // Middleware tambahan untuk menangani CORS dengan origins yang sama
@@ -107,11 +122,12 @@ app.use((req, res, next) => {
   }
 });
 
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-
-// Serve uploads directory dengan path yang benar
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+// Serve uploads directory dengan path yang benar dan cache control
+app.use('/uploads', express.static(path.join(__dirname, 'uploads'), {
+  maxAge: '1d', // Cache selama 1 hari
+  etag: true,
+  lastModified: true
+}));
 
 // Socket.IO Authentication Middleware
 io.use((socket, next) => {
