@@ -38,7 +38,7 @@ const io = new Server(httpServer, {
       "https://retinascan.onrender.com",
       "https://retinascan-dashboard.onrender.com",
       "https://retinascan-backend-eszo.onrender.com",
-      "https://flask-service-1qmz.onrender.com"
+      "https://flask-service-4ifc.onrender.com"
     ],
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
@@ -68,7 +68,7 @@ app.use(cors({
     'https://retinascan.onrender.com',
     'https://retinascan-dashboard.onrender.com',
     'https://retinascan-backend-eszo.onrender.com',
-    'https://flask-service-1qmz.onrender.com'
+    'https://flask-service-4ifc.onrender.com'
   ],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
@@ -87,7 +87,7 @@ app.use((req, res, next) => {
     'https://retinascan.onrender.com',
     'https://retinascan-dashboard.onrender.com',
     'https://retinascan-backend-eszo.onrender.com',
-    'https://flask-service-1qmz.onrender.com'
+    'https://flask-service-4ifc.onrender.com'
   ];
   
   const origin = req.headers.origin;
@@ -157,7 +157,7 @@ app.get('/api/health', (req, res) => {
       timestamp: new Date().toISOString(),
       mongo_connection: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
       services: {
-        flask_api: process.env.FLASK_API_URL || 'not configured'
+        flask_api: process.env.FLASK_API_URL || 'https://flask-service-4ifc.onrender.com'
       }
     });
   } catch (error) {

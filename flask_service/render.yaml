@@ -1,25 +1,32 @@
 services:
+  # Backend API service
   - type: web
-    name: flask-service
+    name: retinopathy-api
     env: python
     plan: free
-    buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn app:app
-    envVars:
-      - key: SIMULATION_MODE
-        value: "0"
-      - key: FORCE_MODEL
-        value: "1"
-      - key: TF_FORCE_GPU_ALLOW_GROWTH
-        value: "true"
-      - key: TF_CPP_MIN_LOG_LEVEL
-        value: "2"
-      - key: PYTHONUNBUFFERED
-        value: "1"
-      - key: MEMORY_LIMITED
-        value: "1"  # Set to 1 if running in memory-limited environment like Render free tier
+    buildCommand: |
+      pip install --upgrade pip
+      pip install -r requirements.txt
+    startCommand: gunicorn app:app --log-level debug --timeout 600 --workers 1 --threads 1 --max-requests 1 --max-requests-jitter 0 --access-logfile - --error-logfile - --preload
+    autoDeploy: true
+    # Konfigurasi untuk model berukuran besar
     disk:
       name: model-storage
-      mountPath: /app/models
-      sizeGB: 1
-    autoDeploy: true
+      mountPath: /opt/render/project/src
+      sizeGB: 5
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.9.16
+      - key: TF_CPP_MIN_LOG_LEVEL
+        value: 0
+      - key: TF_FORCE_GPU_ALLOW_GROWTH
+        value: true
+      - key: PYTHONUNBUFFERED
+        value: true
+      - key: PORT
+        value: 10000
+      - key: MONGO_URI
+        sync: false
+    healthCheckPath: /
+    buildpacks:
+      - url: https://github.com/heroku/heroku-buildpack-apt 

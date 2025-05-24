@@ -1,79 +1,90 @@
-# RetinaScan Flask API
+# API Retinopati Diabetik
 
-API ini berfungsi sebagai backend untuk menganalisis gambar retina menggunakan model machine learning (H5) untuk deteksi retinopati diabetik.
+API Flask untuk klasifikasi Retinopati Diabetik menggunakan model deep learning TensorFlow.
 
-## Setup
-
-1. Pastikan Python 3.9+ sudah terpasang
-2. Instal dependensi:
-   ```
-   pip install -r requirements.txt
-   ```
-   
-   Jika ada masalah dengan TensorFlow, instalasi langsung melalui pip:
-   ```
-   pip install tensorflow==2.19.0
-   ```
-   
-3. Pastikan file model (`model-Retinopaty.h5`) berada di folder root atau di salah satu lokasi yang didukung
-
-## Menjalankan API
+## Struktur Folder
 
 ```
+backend/flask_service/
+  ├── app.py                 # File utama aplikasi Flask
+  ├── model-Retinopaty.h5    # Model deep learning untuk klasifikasi
+  ├── requirements.txt       # Dependensi Python
+  ├── Procfile               # Konfigurasi untuk deployment
+  ├── render.yaml            # Konfigurasi untuk Render
+  └── README.md              # Dokumentasi
+```
+
+## Penggunaan Lokal
+
+1. Install dependensi:
+```bash
+pip install -r requirements.txt
+```
+
+2. Jalankan aplikasi:
+```bash
 python app.py
 ```
 
-API akan berjalan pada `http://localhost:5000`
+3. API akan berjalan di `http://localhost:5000`
 
-## Mode Operasi
+## Endpoint API
 
-API ini dapat berjalan dalam tiga mode:
-1. **Mode Model Utama**: Menggunakan model H5 untuk prediksi yang akurat (default)
-2. **Mode Model Fallback**: Menggunakan model yang lebih kecil dan efisien jika model utama gagal dimuat
-3. **Mode Simulasi**: Digunakan sebagai fallback terakhir jika semua model tidak tersedia
+### 1. Health Check
+- **URL**: `/`
+- **Method**: `GET`
+- **Response**: Status API dan status model
 
-## Pemuatan Model
+### 2. Prediksi Retinopati
+- **URL**: `/predict`
+- **Method**: `POST`
+- **Body**: Form-data dengan key 'file' dan value berupa file gambar
+- **Response**:
+```json
+{
+  "id": "prediction_id",
+  "class": "Nama Kelas",
+  "confidence": 0.95
+}
+```
 
-API akan mencoba memuat model dengan beberapa metode:
-1. Memuat model langsung dengan `load_model()`
-2. Memuat arsitektur dan bobot secara terpisah
-3. Memuat dari format SavedModel jika tersedia
+### 3. Mendapatkan Daftar Prediksi
+- **URL**: `/predictions?page=1&limit=20`
+- **Method**: `GET`
+- **Response**: Daftar prediksi dengan pagination
 
-Jika semua metode gagal, API akan membuat model fallback yang lebih kecil dan efisien.
+### 4. Statistik Prediksi
+- **URL**: `/stats`
+- **Method**: `GET`
+- **Response**: Statistik prediksi berdasarkan kelas dan waktu
 
-## Endpoint
+### 5. Test Model
+- **URL**: `/test-model`
+- **Method**: `GET`
+- **Response**: Status model dan ringkasan model
 
-- `POST /predict` - Upload dan analisis gambar retina
-- `GET /info` - Dapatkan informasi tentang model
-- `GET /` - Health check
-- `GET /test` - Endpoint khusus untuk testing koneksi
+## Deployment ke Render
 
-## Distribusi Hasil Simulasi
+1. Pastikan file `render.yaml` sudah ada dan benar
+2. Buat akun di [Render](https://render.com)
+3. Hubungkan dengan repository GitHub Anda
+4. Pilih "Blueprint" saat membuat service baru
+5. Render akan otomatis menggunakan konfigurasi dari `render.yaml`
+6. Tambahkan variabel lingkungan:
+   - `MONGO_URI`: URI koneksi MongoDB Anda
+7. Klik "Apply" untuk memulai deployment
 
-Jika model tidak dapat dimuat, API akan berjalan dalam mode simulasi yang memberikan hasil dengan distribusi sebagai berikut:
-- 25% Tidak ada DR
-- 25% Ringan
-- 20% Sedang
-- 20% Berat
-- 10% Sangat Berat
+### Catatan Penting untuk Deployment
 
-## Integrasi dengan Node.js
+- Pastikan model `model-Retinopaty.h5` ada dalam repository
+- Model berukuran besar, jadi pastikan disk storage di Render cukup (minimal 5GB)
+- Render akan menggunakan Python 3.9.16 sesuai konfigurasi
+- Gunakan MongoDB Atlas untuk database produksi
 
-API ini digunakan oleh aplikasi Node.js untuk menganalisis gambar retina yang diunggah pengguna. Aplikasi Node.js akan mengirim gambar ke endpoint `/predict` dan menerima hasil analisis untuk disimpan ke MongoDB.
+## Catatan Teknis
 
-## Deployment
-
-API ini di-deploy di Render sebagai web service. Konfigurasi ada di `render.yaml`. Untuk lingkungan dengan memori terbatas seperti Render free tier, API akan menggunakan model yang lebih kecil dan efisien.
-
-## Catatan Versi TensorFlow
-
-API ini menggunakan TensorFlow 2.19.0 yang merupakan versi terbaru yang tersedia. Pastikan Anda menggunakan versi Python yang kompatibel (3.9-3.12).
-
-## Perubahan Terbaru
-
-- Perbaikan kompatibilitas TensorFlow untuk memuat model H5
-- Penambahan metode alternatif untuk memuat model
-- Distribusi hasil simulasi yang lebih merata (tidak lagi selalu "Sedang")
-- Dukungan untuk lingkungan dengan memori terbatas
-- Optimasi model fallback
-- Penyimpanan model yang dioptimalkan untuk penggunaan di masa depan
+- Model membutuhkan gambar fundus mata dengan ukuran 224x224 pixel
+- Kelas output: ['No DR', 'Mild', 'Moderate', 'Severe', 'Proliferative DR']
+- API menggunakan TensorFlow dan Flask
+- Semua prediksi disimpan dalam database MongoDB
+- Tidak ada data dummy dalam aplikasi ini 

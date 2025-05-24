@@ -12,8 +12,8 @@ router.get('/api-status/flask', authMiddleware, getFlaskApiStatus);
 router.get('/test-flask-connection', authMiddleware, testFlaskConnection);
 router.get('/flask-info', authMiddleware, async (req, res) => {
   try {
-    const FLASK_API_URL = process.env.FLASK_API_URL || 'http://localhost:5001';
-    const FLASK_API_INFO_URL = `${FLASK_API_URL}/info`;
+    const FLASK_API_URL = process.env.FLASK_API_URL || 'https://flask-service-4ifc.onrender.com';
+    const FLASK_API_INFO_URL = `${FLASK_API_URL}/`;
     
     console.log(`Mengambil info dari Flask API: ${FLASK_API_INFO_URL}`);
     
@@ -31,7 +31,7 @@ router.get('/flask-info', authMiddleware, async (req, res) => {
     res.status(500).json({
       success: false,
       error: error.message,
-      flaskApiUrl: process.env.FLASK_API_URL || 'http://localhost:5001'
+      flaskApiUrl: process.env.FLASK_API_URL || 'https://flask-service-4ifc.onrender.com'
     });
   }
 });

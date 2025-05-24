@@ -13,7 +13,7 @@ const __dirname = dirname(__filename);
 // Gunakan environment variable FLASK_API_URL yang sudah diatur di Render
 // Tambahkan URL alternatif jika URL utama tidak tersedia
 const FLASK_API_BASE_URLS = [
-  process.env.FLASK_API_URL || 'https://flask-service-1qmz.onrender.com',
+  process.env.FLASK_API_URL || 'https://flask-service-4ifc.onrender.com',
   'https://retinascan-flask-api.onrender.com',
   'http://localhost:5001'
 ];
@@ -22,14 +22,14 @@ const FLASK_API_BASE_URLS = [
 let currentUrlIndex = 0;
 let FLASK_API_BASE_URL = FLASK_API_BASE_URLS[currentUrlIndex];
 let FLASK_API_URL = `${FLASK_API_BASE_URL}/predict`;
-let FLASK_API_INFO_URL = `${FLASK_API_BASE_URL}/info`;
+let FLASK_API_INFO_URL = `${FLASK_API_BASE_URL}/`;
 
 // Fungsi untuk beralih ke URL berikutnya
 const switchToNextFlaskApiUrl = () => {
   currentUrlIndex = (currentUrlIndex + 1) % FLASK_API_BASE_URLS.length;
   FLASK_API_BASE_URL = FLASK_API_BASE_URLS[currentUrlIndex];
   FLASK_API_URL = `${FLASK_API_BASE_URL}/predict`;
-  FLASK_API_INFO_URL = `${FLASK_API_BASE_URL}/info`;
+  FLASK_API_INFO_URL = `${FLASK_API_BASE_URL}/`;
   console.log(`Beralih ke Flask API URL alternatif: ${FLASK_API_BASE_URL}`);
   return FLASK_API_BASE_URL;
 };
@@ -154,7 +154,7 @@ const checkFlaskApiStatus = async () => {
     console.log(`Mencoba menggunakan URL terakhir yang berhasil: ${flaskApiStatus.activeUrl}`);
     FLASK_API_BASE_URL = flaskApiStatus.activeUrl;
     FLASK_API_URL = `${FLASK_API_BASE_URL}/predict`;
-    FLASK_API_INFO_URL = `${FLASK_API_BASE_URL}/info`;
+    FLASK_API_INFO_URL = `${FLASK_API_BASE_URL}/`;
     
     // Perbarui currentUrlIndex
     currentUrlIndex = FLASK_API_BASE_URLS.indexOf(FLASK_API_BASE_URL);
@@ -241,7 +241,7 @@ async function testFlaskApiConnection() {
       if (i === originalUrlIndex) continue;
       
       const alternativeBaseUrl = FLASK_API_BASE_URLS[i];
-      const alternativeInfoUrl = `${alternativeBaseUrl}/info`;
+      const alternativeInfoUrl = `${alternativeBaseUrl}/`;
       
       console.log(`Mencoba URL alternatif: ${alternativeInfoUrl}`);
       
@@ -309,7 +309,7 @@ testFlaskApiConnection().then(result => {
     const originalUrl = FLASK_API_BASE_URL;
     // Temporarily set to localhost for testing
     global.FLASK_API_BASE_URL_TEMP = 'http://localhost:5001';
-    const tempInfoUrl = `${global.FLASK_API_BASE_URL_TEMP}/info`;
+    const tempInfoUrl = `${global.FLASK_API_BASE_URL_TEMP}/`;
     
     axios.get(tempInfoUrl, { timeout: 5000 })
       .then(response => {
@@ -401,7 +401,7 @@ export const uploadImage = async (req, res, next) => {
             }
 
             // Map kelas dari Flask API ke format yang diharapkan frontend
-            if (predictionResult.severity) {
+            if (predictionResult.class) {
               // Pemetaan kelas dari Flask API ke format frontend
               const severityMapping = {
                 'Tidak ada DR': 'Tidak ada',
@@ -409,10 +409,65 @@ export const uploadImage = async (req, res, next) => {
                 'DR Sedang': 'Sedang',
                 'DR Berat': 'Berat',
                 'DR Proliferatif': 'Sangat Berat',
-                // Fallback untuk format lama
                 'Normal': 'Tidak ada',
                 'Diabetic Retinopathy': 'Sedang',
-                // Tambahan untuk kompatibilitas dengan Flask API terbaru
+                'No DR': 'Tidak ada',
+                'Mild': 'Ringan',
+                'Moderate': 'Sedang',
+                'Severe': 'Berat',
+                'Proliferative DR': 'Sangat Berat'
+              };
+
+              // Map severity ke format frontend
+              predictionResult.frontendSeverity = severityMapping[predictionResult.class] || predictionResult.class;
+              
+              // Map severity level ke format frontend (0-4)
+              const severityLevelMapping = {
+                'Tidak ada DR': 0,
+                'DR Ringan': 1,
+                'DR Sedang': 2,
+                'DR Berat': 3,
+                'DR Proliferatif': 4,
+                'Normal': 0,
+                'Diabetic Retinopathy': 2,
+                'No DR': 0,
+                'Mild': 1,
+                'Moderate': 2,
+                'Severe': 3,
+                'Proliferative DR': 4
+              };
+              
+              predictionResult.frontendSeverityLevel = severityLevelMapping[predictionResult.class] || predictionResult.severity_level || 0;
+              
+              // Tambahkan rekomendasi berdasarkan tingkat keparahan
+              const recommendationMapping = {
+                'Tidak ada DR': 'Lakukan pemeriksaan rutin setiap tahun.',
+                'DR Ringan': 'Kontrol gula darah dan tekanan darah. Pemeriksaan ulang dalam 9-12 bulan.',
+                'DR Sedang': 'Konsultasi dengan dokter spesialis mata. Pemeriksaan ulang dalam 6 bulan.',
+                'DR Berat': 'Rujukan segera ke dokter spesialis mata. Pemeriksaan ulang dalam 2-3 bulan.',
+                'DR Proliferatif': 'Rujukan segera ke dokter spesialis mata untuk evaluasi dan kemungkinan tindakan laser atau operasi.',
+                'Normal': 'Lakukan pemeriksaan rutin setiap tahun.',
+                'Diabetic Retinopathy': 'Konsultasi dengan dokter spesialis mata. Pemeriksaan ulang dalam 6 bulan.',
+                'No DR': 'Lakukan pemeriksaan rutin setiap tahun.',
+                'Mild': 'Kontrol gula darah dan tekanan darah. Pemeriksaan ulang dalam 9-12 bulan.',
+                'Moderate': 'Konsultasi dengan dokter spesialis mata. Pemeriksaan ulang dalam 6 bulan.',
+                'Severe': 'Rujukan segera ke dokter spesialis mata. Pemeriksaan ulang dalam 2-3 bulan.',
+                'Proliferative DR': 'Rujukan segera ke dokter spesialis mata untuk evaluasi dan kemungkinan tindakan laser atau operasi.'
+              };
+              
+              // Gunakan rekomendasi dari Flask API jika ada, jika tidak gunakan mapping
+              predictionResult.recommendation = predictionResult.recommendation || recommendationMapping[predictionResult.class] || 'Konsultasikan dengan dokter mata.';
+            } else if (predictionResult.severity) {
+              // Format lama, tetap gunakan kode yang ada
+              // Pemetaan kelas dari Flask API ke format frontend
+              const severityMapping = {
+                'Tidak ada DR': 'Tidak ada',
+                'DR Ringan': 'Ringan',
+                'DR Sedang': 'Sedang',
+                'DR Berat': 'Berat',
+                'DR Proliferatif': 'Sangat Berat',
+                'Normal': 'Tidak ada',
+                'Diabetic Retinopathy': 'Sedang',
                 'No DR': 'Tidak ada',
                 'Mild': 'Ringan',
                 'Moderate': 'Sedang',
@@ -430,10 +485,8 @@ export const uploadImage = async (req, res, next) => {
                 'DR Sedang': 2,
                 'DR Berat': 3,
                 'DR Proliferatif': 4,
-                // Fallback untuk format lama
                 'Normal': 0,
                 'Diabetic Retinopathy': 2,
-                // Tambahan untuk kompatibilitas dengan Flask API terbaru
                 'No DR': 0,
                 'Mild': 1,
                 'Moderate': 2,
@@ -444,17 +497,14 @@ export const uploadImage = async (req, res, next) => {
               predictionResult.frontendSeverityLevel = severityLevelMapping[predictionResult.severity] || predictionResult.severity_level || 0;
               
               // Tambahkan rekomendasi berdasarkan tingkat keparahan
-              // Menggunakan rekomendasi yang sama persis dengan yang didefinisikan di flask_service/app.py
               const recommendationMapping = {
                 'Tidak ada DR': 'Lakukan pemeriksaan rutin setiap tahun.',
                 'DR Ringan': 'Kontrol gula darah dan tekanan darah. Pemeriksaan ulang dalam 9-12 bulan.',
                 'DR Sedang': 'Konsultasi dengan dokter spesialis mata. Pemeriksaan ulang dalam 6 bulan.',
                 'DR Berat': 'Rujukan segera ke dokter spesialis mata. Pemeriksaan ulang dalam 2-3 bulan.',
                 'DR Proliferatif': 'Rujukan segera ke dokter spesialis mata untuk evaluasi dan kemungkinan tindakan laser atau operasi.',
-                // Fallback untuk format lama
                 'Normal': 'Lakukan pemeriksaan rutin setiap tahun.',
                 'Diabetic Retinopathy': 'Konsultasi dengan dokter spesialis mata. Pemeriksaan ulang dalam 6 bulan.',
-                // Tambahan untuk kompatibilitas dengan Flask API terbaru - PERSIS SAMA dengan yang di app.py
                 'No DR': 'Lakukan pemeriksaan rutin setiap tahun.',
                 'Mild': 'Kontrol gula darah dan tekanan darah. Pemeriksaan ulang dalam 9-12 bulan.',
                 'Moderate': 'Konsultasi dengan dokter spesialis mata. Pemeriksaan ulang dalam 6 bulan.',
@@ -920,64 +970,82 @@ export const deleteAnalysis = async (req, res) => {
 // Endpoint untuk pengujian koneksi Flask API secara menyeluruh
 export const testFlaskConnection = async (req, res) => {
   try {
-    console.log('Menjalankan pengujian menyeluruh untuk Flask API...');
+    console.log('Menguji koneksi ke Flask API...');
     
-    // Uji koneksi ke URL Flask API utama
+    // Coba URL utama terlebih dahulu
     const mainTest = await testFlaskApiConnection();
     
-    // Jika koneksi utama gagal, coba ke localhost sebagai perbandingan
-    let localhostTest = null;
-    if (!mainTest.success) {
-      console.log('Koneksi ke URL utama gagal, mencoba localhost...');
-      // Simpan URL asli
-      const originalBaseUrl = FLASK_API_BASE_URL;
-      const originalInfoUrl = FLASK_API_INFO_URL;
+    // Jika URL utama berhasil, kembalikan hasilnya
+    if (mainTest.success) {
+      // Cek apakah model dimuat dengan benar
+      const modelStatus = mainTest.data && mainTest.data.model_loaded;
       
-      // Ganti dengan localhost untuk testing
-      const localBaseUrl = 'http://localhost:5001';
-      const localInfoUrl = `${localBaseUrl}/info`;
-      
-      try {
-        const response = await axios.get(localInfoUrl, { timeout: 5000 });
-        localhostTest = {
-          success: true,
-          url: localInfoUrl,
-          data: response.data,
-          responseTime: 0 // Tidak menghitung waktu respons untuk simplikasi
-        };
-      } catch (error) {
-        localhostTest = {
-          success: false,
-          url: localInfoUrl,
-          error: error.message,
-          code: error.code
-        };
-      }
+      return res.json({
+        success: true,
+        message: `Koneksi ke Flask API berhasil (${mainTest.responseTime}ms)`,
+        url: mainTest.url,
+        model_loaded: modelStatus === true,
+        data: mainTest.data
+      });
     }
     
-    // Hasil pengujian
-    res.json({
-      mainConnection: {
-        url: FLASK_API_INFO_URL,
-        success: mainTest.success,
-        responseTime: mainTest.responseTime,
-        data: mainTest.data,
-        error: mainTest.error
-      },
-      localhostConnection: localhostTest,
-      recommendations: generateRecommendations(mainTest, localhostTest),
-      environment: {
-        flaskApiBaseUrl: FLASK_API_BASE_URL,
-        flaskApiUrl: FLASK_API_URL,
-        flaskApiInfoUrl: FLASK_API_INFO_URL,
-        nodeEnv: process.env.NODE_ENV
-      }
-    });
+    // Jika gagal, coba URL localhost untuk testing
+    console.log('Mencoba koneksi ke localhost...');
+    
+    // Temporarily set to localhost for testing
+    global.FLASK_API_BASE_URL_TEMP = 'http://localhost:5001';
+    const tempInfoUrl = `${global.FLASK_API_BASE_URL_TEMP}/`;
+    
+    axios.get(tempInfoUrl, { timeout: 5000 })
+      .then(response => {
+        console.log('Koneksi ke localhost berhasil');
+        
+        // Buat rekomendasi berdasarkan hasil test
+        const recommendations = generateRecommendations(mainTest, {
+          success: true,
+          data: response.data
+        });
+        
+        return res.json({
+          success: true,
+          message: 'Koneksi ke Flask API gagal tetapi localhost berhasil',
+          url: global.FLASK_API_BASE_URL_TEMP,
+          recommendations,
+          data: response.data
+        });
+      })
+      .catch(err => {
+        console.log('Koneksi ke localhost juga gagal');
+        
+        // Ganti dengan localhost untuk testing
+        const localBaseUrl = 'http://localhost:5001';
+        const localInfoUrl = `${localBaseUrl}/`;
+        
+        try {
+          // Buat rekomendasi berdasarkan hasil test
+          const recommendations = generateRecommendations(mainTest, { success: false });
+          
+          return res.json({
+            success: false,
+            message: 'Koneksi ke Flask API dan localhost gagal',
+            error: mainTest.error || 'Tidak dapat terhubung ke Flask API',
+            recommendations,
+            urls_tried: [FLASK_API_BASE_URL, localBaseUrl]
+          });
+        } catch (finalError) {
+          return res.status(500).json({
+            success: false,
+            message: 'Terjadi kesalahan saat menguji koneksi',
+            error: finalError.message
+          });
+        }
+      });
   } catch (error) {
-    console.error('Error saat melakukan pengujian Flask API:', error);
-    res.status(500).json({ 
-      message: 'Gagal melakukan pengujian Flask API', 
-      error: error.message 
+    console.error('Error saat menguji koneksi:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Terjadi kesalahan saat menguji koneksi',
+      error: error.message
     });
   }
 };
