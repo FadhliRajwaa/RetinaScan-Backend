@@ -177,6 +177,19 @@ const checkFlaskApiStatus = async () => {
   
   // Gunakan fallback mode jika semua percobaan gagal
   flaskApiStatus.fallbackMode = true;
+  flaskApiStatus.available = true; // Ubah menjadi true untuk mengaktifkan mode simulasi
+  
+  // Tambahkan informasi simulasi
+  flaskApiStatus.info = {
+    simulation_mode: true,
+    status: 'online (simulation)',
+    service: 'retinopathy-api',
+    model_name: 'Retinopathy Detection Model (Simulated)',
+    classes: ['No DR', 'Mild', 'Moderate', 'Severe', 'Proliferative DR'],
+    api_version: '1.0.1'
+  };
+  
+  console.log('Mode simulasi diaktifkan karena Flask API tidak tersedia');
   
   // Kembalikan true untuk menggunakan data mock dengan variasi hasil
   return true;
@@ -326,6 +339,21 @@ testFlaskApiConnection().then(result => {
       .catch(err => {
         console.log('Koneksi ke localhost juga gagal.');
         console.log('Pastikan Flask service berjalan di salah satu URL.');
+        console.log('Mengaktifkan mode simulasi untuk seluruh aplikasi...');
+        
+        // Aktifkan mode simulasi secara global
+        flaskApiStatus.available = true;
+        flaskApiStatus.fallbackMode = true;
+        flaskApiStatus.checked = true;
+        flaskApiStatus.lastCheck = Date.now();
+        flaskApiStatus.info = {
+          simulation_mode: true,
+          status: 'online (simulation)',
+          service: 'retinopathy-api',
+          model_name: 'Retinopathy Detection Model (Simulated)',
+          classes: ['No DR', 'Mild', 'Moderate', 'Severe', 'Proliferative DR'],
+          api_version: '1.0.1'
+        };
       })
       .finally(() => {
         // Clean up
@@ -361,8 +389,8 @@ export const uploadImage = async (req, res, next) => {
     let isSimulation = false;
     let apiUrlUsed = null;
     
-    // Jika Flask API tersedia, kirim gambar untuk analisis
-    if (apiAvailable) {
+    // Jika Flask API tersedia dan tidak dalam fallback mode, kirim gambar untuk analisis
+    if (apiAvailable && !flaskApiStatus.fallbackMode) {
       try {
         // Buat form data untuk dikirim ke Flask API
         const formData = new FormData();
@@ -547,36 +575,11 @@ export const uploadImage = async (req, res, next) => {
         }
         
         if (!success) {
-          if (coldStartDetected) {
-            throw new Error('Free tier Render membutuhkan waktu untuk startup. Silakan coba lagi dalam 2-3 menit.');
-          } else {
-            throw lastError || new Error('Gagal menghubungi Flask API setelah beberapa percobaan');
-          }
+          console.log('Semua percobaan ke Flask API gagal, beralih ke mode simulasi');
+          throw new Error('Gagal menghubungi Flask API setelah beberapa percobaan');
         }
       } catch (flaskError) {
         console.error('Error saat menghubungi Flask API:', flaskError.message);
-        if (flaskError.response) {
-          console.error('Response status:', flaskError.response.status);
-          // Batasi output data untuk menghindari teks random yang panjang
-          const responseData = flaskError.response.data;
-          let truncatedData;
-          
-          if (typeof responseData === 'string') {
-            truncatedData = responseData.length > 100 
-              ? responseData.substring(0, 100) + '... [truncated]' 
-              : responseData;
-          } else if (responseData && typeof responseData === 'object') {
-            truncatedData = '[Object data]';
-          } else {
-            truncatedData = responseData;
-          }
-          
-          console.error('Response data:', truncatedData);
-        } else if (flaskError.request) {
-          console.error('Tidak ada respons dari server Flask API');
-        } else {
-          console.error('Error saat menyiapkan request:', flaskError.message);
-        }
         
         // Gunakan data mock untuk fallback dengan variasi hasil
         console.log('Menggunakan data mock untuk testing dengan variasi hasil...');
@@ -614,11 +617,11 @@ export const uploadImage = async (req, res, next) => {
           }
         };
         isSimulation = true;
-        apiUrlUsed = 'mock-data-varied';
+        apiUrlUsed = 'mock-data-simulation';
       }
     } else {
-      // Jika Flask API tidak tersedia, gunakan data mock dengan variasi hasil
-      console.log('Flask API tidak tersedia, menggunakan data mock dengan variasi hasil...');
+      // Jika Flask API tidak tersedia atau dalam fallback mode, gunakan data mock dengan variasi hasil
+      console.log('Flask API tidak tersedia atau dalam mode fallback, menggunakan data mock dengan variasi hasil...');
       
       // Buat array tingkat keparahan dengan distribusi yang lebih merata
       const mockSeverities = [
@@ -653,7 +656,7 @@ export const uploadImage = async (req, res, next) => {
         }
       };
       isSimulation = true;
-      apiUrlUsed = 'mock-data-varied';
+      apiUrlUsed = 'mock-data-simulation';
       
       // Tampilkan pesan error yang lebih jelas
       console.log(`PERHATIAN: Menggunakan data mock dengan tingkat keparahan "${selectedMockSeverity.frontendSeverity}" karena Flask API tidak tersedia`);
