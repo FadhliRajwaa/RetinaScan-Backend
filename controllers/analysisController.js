@@ -302,41 +302,7 @@ async function testFlaskApiConnection() {
 testFlaskApiConnection().then(result => {
   console.log('Hasil pengujian koneksi awal Flask API:', result.success ? 'Berhasil' : 'Gagal');
   if (!result.success) {
-    console.log('Mencoba fallback ke localhost...');
-    // Coba gunakan localhost sebagai fallback
-    const originalUrl = FLASK_API_BASE_URL;
-    // Temporarily set to localhost for testing
-    global.FLASK_API_BASE_URL_TEMP = 'http://localhost:5001';
-    const tempInfoUrl = `${global.FLASK_API_BASE_URL_TEMP}/`;
-    
-    axios.get(tempInfoUrl, { timeout: 5000 })
-      .then(response => {
-        console.log('Koneksi ke localhost berhasil!');
-        console.log('Pertimbangkan untuk menggunakan URL ini jika deployment mengalami masalah.');
-      })
-      .catch(err => {
-        console.log('Koneksi ke localhost juga gagal.');
-        console.log('Pastikan Flask service berjalan di salah satu URL.');
-        console.log('Mengaktifkan mode simulasi untuk seluruh aplikasi...');
-        
-        // Aktifkan mode simulasi secara global
-        flaskApiStatus.available = true;
-        flaskApiStatus.fallbackMode = true;
-        flaskApiStatus.checked = true;
-        flaskApiStatus.lastCheck = Date.now();
-        flaskApiStatus.info = {
-          simulation_mode: true,
-          status: 'online (simulation)',
-          service: 'retinopathy-api',
-          model_name: 'Retinopathy Detection Model (Simulated)',
-          classes: ['No DR', 'Mild', 'Moderate', 'Severe', 'Proliferative DR'],
-          api_version: '1.0.1'
-        };
-      })
-      .finally(() => {
-        // Clean up
-        delete global.FLASK_API_BASE_URL_TEMP;
-      });
+    console.log('Koneksi ke Flask API gagal. Pastikan Flask API berjalan dan dapat diakses.');
   }
 });
 
@@ -363,275 +329,217 @@ export const uploadImage = async (req, res, next) => {
     const apiAvailable = await checkFlaskApiStatus();
     console.log('Status Flask API:', apiAvailable ? 'Tersedia' : 'Tidak tersedia');
     
+    // Jika Flask API tidak tersedia, kembalikan error
+    if (!apiAvailable) {
+      // Hapus file jika Flask API tidak tersedia
+      if (req.file && req.file.path) {
+        fs.unlink(req.file.path, (err) => {
+          if (err) console.error('Error deleting file:', err);
+        });
+      }
+      return res.status(503).json({ 
+        message: 'Flask API tidak tersedia. Tidak dapat melakukan analisis retina.',
+        error: 'SERVICE_UNAVAILABLE'
+      });
+    }
+    
     let predictionResult;
-    let isSimulation = false;
     let apiUrlUsed = null;
     
-    // Periksa apakah Flask API tersedia dan tidak dalam fallback mode, kirim gambar untuk analisis
-    if (apiAvailable && !flaskApiStatus.fallbackMode) {
-      try {
-        // Buat form data untuk dikirim ke Flask API
-        const formData = new FormData();
-        const fileStream = fs.createReadStream(req.file.path);
-        formData.append('file', fileStream);
+    try {
+      // Buat form data untuk dikirim ke Flask API
+      const formData = new FormData();
+      const fileStream = fs.createReadStream(req.file.path);
+      formData.append('file', fileStream);
 
-        console.log(`Mengirim request ke Flask API di: ${FLASK_API_URL}`);
-        apiUrlUsed = FLASK_API_URL;
-        
-        // Kirim request ke Flask API dengan retry logic yang lebih robust
-        let retries = 3;
-        let success = false;
-        let lastError = null;
-        let coldStartDetected = false;
-        
-        while (retries > 0 && !success) {
-          try {
-            console.log(`Mencoba request ke Flask API (sisa percobaan: ${retries})...`);
+      console.log(`Mengirim request ke Flask API di: ${FLASK_API_URL}`);
+      apiUrlUsed = FLASK_API_URL;
+      
+      // Kirim request ke Flask API dengan retry logic yang lebih robust
+      let retries = 3;
+      let success = false;
+      let lastError = null;
+      let coldStartDetected = false;
+      
+      while (retries > 0 && !success) {
+        try {
+          console.log(`Mencoba request ke Flask API (sisa percobaan: ${retries})...`);
+          
+          // Kirim request ke Flask API dengan timeout 60 detik
+          const response = await axios.post(FLASK_API_URL, formData, {
+            headers: {
+              ...formData.getHeaders(),
+            },
+            maxContentLength: Infinity,
+            maxBodyLength: Infinity,
+            timeout: 60000 // 60 detik timeout
+          });
+          
+          // Ambil hasil prediksi
+          predictionResult = response.data;
+          // Tampilkan hasil prediksi dengan format yang lebih ringkas
+          console.log('Hasil prediksi dari Flask API:', 
+            typeof predictionResult === 'object' 
+              ? `{severity: ${predictionResult.severity || predictionResult.class}, confidence: ${predictionResult.confidence}}` 
+              : predictionResult);
+          success = true;
+
+          // Map kelas dari Flask API ke format yang diharapkan frontend
+          if (predictionResult.class) {
+            // Pemetaan kelas dari Flask API ke format frontend
+            const severityMapping = {
+              'Tidak ada DR': 'Tidak ada',
+              'DR Ringan': 'Ringan',
+              'DR Sedang': 'Sedang',
+              'DR Berat': 'Berat',
+              'DR Proliferatif': 'Sangat Berat',
+              'Normal': 'Tidak ada',
+              'Diabetic Retinopathy': 'Sedang',
+              'No DR': 'Tidak ada',
+              'Mild': 'Ringan',
+              'Moderate': 'Sedang',
+              'Severe': 'Berat',
+              'Proliferative DR': 'Sangat Berat'
+            };
+
+            // Map severity ke format frontend
+            predictionResult.frontendSeverity = severityMapping[predictionResult.class] || predictionResult.class;
             
-            // Kirim request ke Flask API dengan timeout yang lebih pendek untuk respons yang lebih cepat
-            // Kurangi timeout dari 3 menit menjadi 60 detik untuk respons yang lebih cepat
-            const response = await axios.post(FLASK_API_URL, formData, {
-              headers: {
-                ...formData.getHeaders(),
-              },
-              maxContentLength: Infinity,
-              maxBodyLength: Infinity,
-              timeout: 60000 // 60 detik timeout (dikurangi dari 180000/3 menit)
-            });
+            // Map severity level ke format frontend (0-4)
+            const severityLevelMapping = {
+              'Tidak ada DR': 0,
+              'DR Ringan': 1,
+              'DR Sedang': 2,
+              'DR Berat': 3,
+              'DR Proliferatif': 4,
+              'Normal': 0,
+              'Diabetic Retinopathy': 2,
+              'No DR': 0,
+              'Mild': 1,
+              'Moderate': 2,
+              'Severe': 3,
+              'Proliferative DR': 4
+            };
             
-            // Ambil hasil prediksi
-            predictionResult = response.data;
-            // Tampilkan hasil prediksi dengan format yang lebih ringkas
-            console.log('Hasil prediksi dari Flask API:', 
-              typeof predictionResult === 'object' 
-                ? `{severity: ${predictionResult.severity || predictionResult.class}, confidence: ${predictionResult.confidence}}` 
-                : predictionResult);
-            success = true;
-
-            // Map kelas dari Flask API ke format yang diharapkan frontend
-            if (predictionResult.class) {
-              // Pemetaan kelas dari Flask API ke format frontend
-              const severityMapping = {
-                'Tidak ada DR': 'Tidak ada',
-                'DR Ringan': 'Ringan',
-                'DR Sedang': 'Sedang',
-                'DR Berat': 'Berat',
-                'DR Proliferatif': 'Sangat Berat',
-                'Normal': 'Tidak ada',
-                'Diabetic Retinopathy': 'Sedang',
-                'No DR': 'Tidak ada',
-                'Mild': 'Ringan',
-                'Moderate': 'Sedang',
-                'Severe': 'Berat',
-                'Proliferative DR': 'Sangat Berat'
-              };
-
-              // Map severity ke format frontend
-              predictionResult.frontendSeverity = severityMapping[predictionResult.class] || predictionResult.class;
-              
-              // Map severity level ke format frontend (0-4)
-              const severityLevelMapping = {
-                'Tidak ada DR': 0,
-                'DR Ringan': 1,
-                'DR Sedang': 2,
-                'DR Berat': 3,
-                'DR Proliferatif': 4,
-                'Normal': 0,
-                'Diabetic Retinopathy': 2,
-                'No DR': 0,
-                'Mild': 1,
-                'Moderate': 2,
-                'Severe': 3,
-                'Proliferative DR': 4
-              };
-              
-              predictionResult.frontendSeverityLevel = severityLevelMapping[predictionResult.class] || predictionResult.severity_level || 0;
-              
-              // Tambahkan rekomendasi berdasarkan tingkat keparahan
-              const recommendationMapping = {
-                'Tidak ada DR': 'Lakukan pemeriksaan rutin setiap tahun.',
-                'DR Ringan': 'Kontrol gula darah dan tekanan darah. Pemeriksaan ulang dalam 9-12 bulan.',
-                'DR Sedang': 'Konsultasi dengan dokter spesialis mata. Pemeriksaan ulang dalam 6 bulan.',
-                'DR Berat': 'Rujukan segera ke dokter spesialis mata. Pemeriksaan ulang dalam 2-3 bulan.',
-                'DR Proliferatif': 'Rujukan segera ke dokter spesialis mata untuk evaluasi dan kemungkinan tindakan laser atau operasi.',
-                'Normal': 'Lakukan pemeriksaan rutin setiap tahun.',
-                'Diabetic Retinopathy': 'Konsultasi dengan dokter spesialis mata. Pemeriksaan ulang dalam 6 bulan.',
-                'No DR': 'Lakukan pemeriksaan rutin setiap tahun.',
-                'Mild': 'Kontrol gula darah dan tekanan darah. Pemeriksaan ulang dalam 9-12 bulan.',
-                'Moderate': 'Konsultasi dengan dokter spesialis mata. Pemeriksaan ulang dalam 6 bulan.',
-                'Severe': 'Rujukan segera ke dokter spesialis mata. Pemeriksaan ulang dalam 2-3 bulan.',
-                'Proliferative DR': 'Rujukan segera ke dokter spesialis mata untuk evaluasi dan kemungkinan tindakan laser atau operasi.'
-              };
-              
-              // Gunakan rekomendasi dari Flask API jika ada, jika tidak gunakan mapping
-              predictionResult.recommendation = predictionResult.recommendation || recommendationMapping[predictionResult.class] || 'Konsultasikan dengan dokter mata.';
-            } else if (predictionResult.severity) {
-              // Format lama, tetap gunakan kode yang ada
-              // Pemetaan kelas dari Flask API ke format frontend
-              const severityMapping = {
-                'Tidak ada DR': 'Tidak ada',
-                'DR Ringan': 'Ringan',
-                'DR Sedang': 'Sedang',
-                'DR Berat': 'Berat',
-                'DR Proliferatif': 'Sangat Berat',
-                'Normal': 'Tidak ada',
-                'Diabetic Retinopathy': 'Sedang',
-                'No DR': 'Tidak ada',
-                'Mild': 'Ringan',
-                'Moderate': 'Sedang',
-                'Severe': 'Berat',
-                'Proliferative DR': 'Sangat Berat'
-              };
-
-              // Map severity ke format frontend
-              predictionResult.frontendSeverity = severityMapping[predictionResult.severity] || predictionResult.severity;
-              
-              // Map severity level ke format frontend (0-4)
-              const severityLevelMapping = {
-                'Tidak ada DR': 0,
-                'DR Ringan': 1,
-                'DR Sedang': 2,
-                'DR Berat': 3,
-                'DR Proliferatif': 4,
-                'Normal': 0,
-                'Diabetic Retinopathy': 2,
-                'No DR': 0,
-                'Mild': 1,
-                'Moderate': 2,
-                'Severe': 3,
-                'Proliferative DR': 4
-              };
-              
-              predictionResult.frontendSeverityLevel = severityLevelMapping[predictionResult.severity] || predictionResult.severity_level || 0;
-              
-              // Tambahkan rekomendasi berdasarkan tingkat keparahan
-              const recommendationMapping = {
-                'Tidak ada DR': 'Lakukan pemeriksaan rutin setiap tahun.',
-                'DR Ringan': 'Kontrol gula darah dan tekanan darah. Pemeriksaan ulang dalam 9-12 bulan.',
-                'DR Sedang': 'Konsultasi dengan dokter spesialis mata. Pemeriksaan ulang dalam 6 bulan.',
-                'DR Berat': 'Rujukan segera ke dokter spesialis mata. Pemeriksaan ulang dalam 2-3 bulan.',
-                'DR Proliferatif': 'Rujukan segera ke dokter spesialis mata untuk evaluasi dan kemungkinan tindakan laser atau operasi.',
-                'Normal': 'Lakukan pemeriksaan rutin setiap tahun.',
-                'Diabetic Retinopathy': 'Konsultasi dengan dokter spesialis mata. Pemeriksaan ulang dalam 6 bulan.',
-                'No DR': 'Lakukan pemeriksaan rutin setiap tahun.',
-                'Mild': 'Kontrol gula darah dan tekanan darah. Pemeriksaan ulang dalam 9-12 bulan.',
-                'Moderate': 'Konsultasi dengan dokter spesialis mata. Pemeriksaan ulang dalam 6 bulan.',
-                'Severe': 'Rujukan segera ke dokter spesialis mata. Pemeriksaan ulang dalam 2-3 bulan.',
-                'Proliferative DR': 'Rujukan segera ke dokter spesialis mata untuk evaluasi dan kemungkinan tindakan laser atau operasi.'
-              };
-              
-              // Gunakan rekomendasi dari Flask API jika ada, jika tidak gunakan mapping
-              predictionResult.recommendation = predictionResult.recommendation || recommendationMapping[predictionResult.severity] || 'Konsultasikan dengan dokter mata.';
-            }
-          } catch (error) {
-            lastError = error;
+            predictionResult.frontendSeverityLevel = severityLevelMapping[predictionResult.class] || predictionResult.severity_level || 0;
             
-            // Deteksi apakah ini terkait cold start (502 Bad Gateway saat startup)
-            if (error.response && error.response.status === 502) {
-              if (!coldStartDetected) {
-                console.log('Terdeteksi cold start pada free tier Render. Ini bisa memakan waktu 2-3 menit...');
-                coldStartDetected = true;
-              }
-              
-              // Gunakan delay yang lebih pendek untuk cold start (15 detik, dikurangi dari 30 detik)
-              console.log('Menunggu 15 detik untuk cold start...');
-              await new Promise(resolve => setTimeout(resolve, 15000));
-            } else {
-              // Delay standar untuk error umum (kurangi dari 5 detik menjadi 3 detik)
-              console.log(`Error biasa, mencoba kembali dalam 3 detik (${retries} percobaan tersisa)...`);
-              await new Promise(resolve => setTimeout(resolve, 3000));
+            // Tambahkan rekomendasi berdasarkan tingkat keparahan
+            const recommendationMapping = {
+              'Tidak ada DR': 'Lakukan pemeriksaan rutin setiap tahun.',
+              'DR Ringan': 'Kontrol gula darah dan tekanan darah. Pemeriksaan ulang dalam 9-12 bulan.',
+              'DR Sedang': 'Konsultasi dengan dokter spesialis mata. Pemeriksaan ulang dalam 6 bulan.',
+              'DR Berat': 'Rujukan segera ke dokter spesialis mata. Pemeriksaan ulang dalam 2-3 bulan.',
+              'DR Proliferatif': 'Rujukan segera ke dokter spesialis mata untuk evaluasi dan kemungkinan tindakan laser atau operasi.',
+              'Normal': 'Lakukan pemeriksaan rutin setiap tahun.',
+              'Diabetic Retinopathy': 'Konsultasi dengan dokter spesialis mata. Pemeriksaan ulang dalam 6 bulan.',
+              'No DR': 'Lakukan pemeriksaan rutin setiap tahun.',
+              'Mild': 'Kontrol gula darah dan tekanan darah. Pemeriksaan ulang dalam 9-12 bulan.',
+              'Moderate': 'Konsultasi dengan dokter spesialis mata. Pemeriksaan ulang dalam 6 bulan.',
+              'Severe': 'Rujukan segera ke dokter spesialis mata. Pemeriksaan ulang dalam 2-3 bulan.',
+              'Proliferative DR': 'Rujukan segera ke dokter spesialis mata untuk evaluasi dan kemungkinan tindakan laser atau operasi.'
+            };
+            
+            // Gunakan rekomendasi dari Flask API jika ada, jika tidak gunakan mapping
+            predictionResult.recommendation = predictionResult.recommendation || recommendationMapping[predictionResult.class] || 'Konsultasikan dengan dokter mata.';
+          } else if (predictionResult.severity) {
+            // Format lama, tetap gunakan kode yang ada
+            // Pemetaan kelas dari Flask API ke format frontend
+            const severityMapping = {
+              'Tidak ada DR': 'Tidak ada',
+              'DR Ringan': 'Ringan',
+              'DR Sedang': 'Sedang',
+              'DR Berat': 'Berat',
+              'DR Proliferatif': 'Sangat Berat',
+              'Normal': 'Tidak ada',
+              'Diabetic Retinopathy': 'Sedang',
+              'No DR': 'Tidak ada',
+              'Mild': 'Ringan',
+              'Moderate': 'Sedang',
+              'Severe': 'Berat',
+              'Proliferative DR': 'Sangat Berat'
+            };
+
+            // Map severity ke format frontend
+            predictionResult.frontendSeverity = severityMapping[predictionResult.severity] || predictionResult.severity;
+            
+            // Map severity level ke format frontend (0-4)
+            const severityLevelMapping = {
+              'Tidak ada DR': 0,
+              'DR Ringan': 1,
+              'DR Sedang': 2,
+              'DR Berat': 3,
+              'DR Proliferatif': 4,
+              'Normal': 0,
+              'Diabetic Retinopathy': 2,
+              'No DR': 0,
+              'Mild': 1,
+              'Moderate': 2,
+              'Severe': 3,
+              'Proliferative DR': 4
+            };
+            
+            predictionResult.frontendSeverityLevel = severityLevelMapping[predictionResult.severity] || predictionResult.severity_level || 0;
+            
+            // Tambahkan rekomendasi berdasarkan tingkat keparahan
+            const recommendationMapping = {
+              'Tidak ada DR': 'Lakukan pemeriksaan rutin setiap tahun.',
+              'DR Ringan': 'Kontrol gula darah dan tekanan darah. Pemeriksaan ulang dalam 9-12 bulan.',
+              'DR Sedang': 'Konsultasi dengan dokter spesialis mata. Pemeriksaan ulang dalam 6 bulan.',
+              'DR Berat': 'Rujukan segera ke dokter spesialis mata. Pemeriksaan ulang dalam 2-3 bulan.',
+              'DR Proliferatif': 'Rujukan segera ke dokter spesialis mata untuk evaluasi dan kemungkinan tindakan laser atau operasi.',
+              'Normal': 'Lakukan pemeriksaan rutin setiap tahun.',
+              'Diabetic Retinopathy': 'Konsultasi dengan dokter spesialis mata. Pemeriksaan ulang dalam 6 bulan.',
+              'No DR': 'Lakukan pemeriksaan rutin setiap tahun.',
+              'Mild': 'Kontrol gula darah dan tekanan darah. Pemeriksaan ulang dalam 9-12 bulan.',
+              'Moderate': 'Konsultasi dengan dokter spesialis mata. Pemeriksaan ulang dalam 6 bulan.',
+              'Severe': 'Rujukan segera ke dokter spesialis mata. Pemeriksaan ulang dalam 2-3 bulan.',
+              'Proliferative DR': 'Rujukan segera ke dokter spesialis mata untuk evaluasi dan kemungkinan tindakan laser atau operasi.'
+            };
+            
+            // Gunakan rekomendasi dari Flask API jika ada, jika tidak gunakan mapping
+            predictionResult.recommendation = predictionResult.recommendation || recommendationMapping[predictionResult.severity] || 'Konsultasikan dengan dokter mata.';
+          }
+        } catch (error) {
+          lastError = error;
+          
+          // Deteksi apakah ini terkait cold start (502 Bad Gateway saat startup)
+          if (error.response && error.response.status === 502) {
+            if (!coldStartDetected) {
+              console.log('Terdeteksi cold start pada free tier Render. Ini bisa memakan waktu 2-3 menit...');
+              coldStartDetected = true;
             }
             
-            retries--;
+            // Gunakan delay yang lebih pendek untuk cold start (15 detik)
+            console.log('Menunggu 15 detik untuk cold start...');
+            await new Promise(resolve => setTimeout(resolve, 15000));
+          } else {
+            // Delay standar untuk error umum (3 detik)
+            console.log(`Error biasa, mencoba kembali dalam 3 detik (${retries} percobaan tersisa)...`);
+            await new Promise(resolve => setTimeout(resolve, 3000));
           }
+          
+          retries--;
         }
-        
-        if (!success) {
-          console.log('Semua percobaan ke Flask API gagal, beralih ke mode simulasi');
-          throw new Error('Gagal menghubungi Flask API setelah beberapa percobaan');
-        }
-      } catch (flaskError) {
-        console.error('Error saat menghubungi Flask API:', flaskError.message);
-        
-        // Gunakan data mock untuk fallback dengan variasi hasil
-        console.log('Menggunakan data mock untuk testing dengan variasi hasil...');
-        
-        // Buat array tingkat keparahan dengan distribusi yang lebih merata
-        const mockSeverities = [
-          { severity: 'Tidak ada DR', severity_level: 0, frontendSeverity: 'Tidak ada', frontendSeverityLevel: 0, 
-            recommendation: 'Lakukan pemeriksaan rutin setiap tahun.' },
-          { severity: 'DR Ringan', severity_level: 1, frontendSeverity: 'Ringan', frontendSeverityLevel: 1, 
-            recommendation: 'Kontrol gula darah dan tekanan darah. Pemeriksaan ulang dalam 9-12 bulan.' },
-          { severity: 'DR Sedang', severity_level: 2, frontendSeverity: 'Sedang', frontendSeverityLevel: 2, 
-            recommendation: 'Konsultasi dengan dokter spesialis mata. Pemeriksaan ulang dalam 6 bulan.' },
-          { severity: 'DR Berat', severity_level: 3, frontendSeverity: 'Berat', frontendSeverityLevel: 3, 
-            recommendation: 'Rujukan segera ke dokter spesialis mata. Pemeriksaan ulang dalam 2-3 bulan.' },
-          { severity: 'DR Proliferatif', severity_level: 4, frontendSeverity: 'Sangat Berat', frontendSeverityLevel: 4, 
-            recommendation: 'Rujukan segera ke dokter spesialis mata untuk evaluasi dan kemungkinan tindakan laser atau operasi.' }
-        ];
-        
-        // Pilih tingkat keparahan secara acak untuk variasi hasil
-        const randomIndex = Math.floor(Math.random() * mockSeverities.length);
-        const selectedMockSeverity = mockSeverities[randomIndex];
-        
-        // Tambahkan variasi confidence
-        const confidence = 0.7 + (Math.random() * 0.25); // Antara 0.7 dan 0.95
-        
-        predictionResult = {
-          severity: selectedMockSeverity.severity,
-          severity_level: selectedMockSeverity.severity_level,
-          confidence: confidence,
-          frontendSeverity: selectedMockSeverity.frontendSeverity,
-          frontendSeverityLevel: selectedMockSeverity.frontendSeverityLevel,
-          recommendation: selectedMockSeverity.recommendation,
-          raw_prediction: {
-            is_simulation: true
-          }
-        };
-        isSimulation = true;
-        apiUrlUsed = 'mock-data-simulation';
       }
-    } else {
-      // Jika Flask API tidak tersedia atau dalam fallback mode, gunakan data mock dengan variasi hasil
-      console.log('Flask API tidak tersedia atau dalam mode fallback, menggunakan data mock dengan variasi hasil...');
       
-      // Buat array tingkat keparahan dengan distribusi yang lebih merata
-      const mockSeverities = [
-        { severity: 'Tidak ada DR', severity_level: 0, frontendSeverity: 'Tidak ada', frontendSeverityLevel: 0, 
-          recommendation: 'Lakukan pemeriksaan rutin setiap tahun.' },
-        { severity: 'DR Ringan', severity_level: 1, frontendSeverity: 'Ringan', frontendSeverityLevel: 1, 
-          recommendation: 'Kontrol gula darah dan tekanan darah. Pemeriksaan ulang dalam 9-12 bulan.' },
-        { severity: 'DR Sedang', severity_level: 2, frontendSeverity: 'Sedang', frontendSeverityLevel: 2, 
-          recommendation: 'Konsultasi dengan dokter spesialis mata. Pemeriksaan ulang dalam 6 bulan.' },
-        { severity: 'DR Berat', severity_level: 3, frontendSeverity: 'Berat', frontendSeverityLevel: 3, 
-          recommendation: 'Rujukan segera ke dokter spesialis mata. Pemeriksaan ulang dalam 2-3 bulan.' },
-        { severity: 'DR Proliferatif', severity_level: 4, frontendSeverity: 'Sangat Berat', frontendSeverityLevel: 4, 
-          recommendation: 'Rujukan segera ke dokter spesialis mata untuk evaluasi dan kemungkinan tindakan laser atau operasi.' }
-      ];
+      if (!success) {
+        console.log('Semua percobaan ke Flask API gagal');
+        throw new Error('Gagal menghubungi Flask API setelah beberapa percobaan');
+      }
+    } catch (flaskError) {
+      console.error('Error saat menghubungi Flask API:', flaskError.message);
       
-      // Pilih tingkat keparahan secara acak untuk variasi hasil
-      const randomIndex = Math.floor(Math.random() * mockSeverities.length);
-      const selectedMockSeverity = mockSeverities[randomIndex];
+      // Hapus file jika terjadi error
+      if (req.file && req.file.path) {
+        fs.unlink(req.file.path, (err) => {
+          if (err) console.error('Error deleting file:', err);
+        });
+      }
       
-      // Tambahkan variasi confidence
-      const confidence = 0.7 + (Math.random() * 0.25); // Antara 0.7 dan 0.95
-      
-      predictionResult = {
-        severity: selectedMockSeverity.severity,
-        severity_level: selectedMockSeverity.severity_level,
-        confidence: confidence,
-        frontendSeverity: selectedMockSeverity.frontendSeverity,
-        frontendSeverityLevel: selectedMockSeverity.frontendSeverityLevel,
-        recommendation: selectedMockSeverity.recommendation,
-        raw_prediction: {
-          is_simulation: true
-        }
-      };
-      isSimulation = true;
-      apiUrlUsed = 'mock-data-simulation';
-      
-      // Tampilkan pesan error yang lebih jelas
-      console.log(`PERHATIAN: Menggunakan data mock dengan tingkat keparahan "${selectedMockSeverity.frontendSeverity}" karena Flask API tidak tersedia`);
+      return res.status(503).json({ 
+        message: 'Gagal menghubungi Flask API untuk analisis retina',
+        error: flaskError.message
+      });
     }
 
     // Simpan hasil analisis ke database dengan konsistensi menggunakan base64
@@ -675,7 +583,7 @@ export const uploadImage = async (req, res, next) => {
         severity: predictionResult.frontendSeverity || predictionResult.severity,
         severityLevel: predictionResult.frontendSeverityLevel || predictionResult.severity_level || 0,
         confidence: predictionResult.confidence || 0,
-        isSimulation: isSimulation,
+        isSimulation: false, // Pastikan selalu false karena tidak ada simulasi
         flaskApiUsed: apiUrlUsed,
         notes: predictionResult.recommendation || ''
       });
@@ -694,7 +602,7 @@ export const uploadImage = async (req, res, next) => {
           analysisId: analysis._id,
           patientId: analysis.patientId,
           imageData: imageBase64, // Kirim image data langsung ke client
-          isSimulation: isSimulation,
+          isSimulation: false, // Pastikan selalu false karena tidak ada simulasi
           flaskApiUrl: apiUrlUsed,
           // Tambahkan informasi tambahan untuk dashboard
           createdAt: analysis.createdAt,

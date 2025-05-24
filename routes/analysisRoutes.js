@@ -28,7 +28,7 @@ router.get('/flask-info', authMiddleware, async (req, res) => {
     });
   } catch (error) {
     console.error('Error saat mengambil info Flask API:', error);
-    res.status(500).json({
+    res.status(503).json({
       success: false,
       error: error.message,
       flaskApiUrl: process.env.FLASK_API_URL || 'https://flask-service-4ifc.onrender.com'
@@ -41,7 +41,8 @@ router.get('/latest', authMiddleware, async (req, res) => {
     
     // Cari analisis terbaru untuk user yang sedang login
     const latestAnalysis = await RetinaAnalysis.findOne({ 
-      userId: req.user.id 
+      userId: req.user.id,
+      isSimulation: false // Pastikan hanya mengambil hasil analisis asli, bukan simulasi
     })
     .populate({
       path: 'patientId',
@@ -64,7 +65,7 @@ router.get('/latest', authMiddleware, async (req, res) => {
       patientName: latestAnalysis.patientId ? latestAnalysis.patientId.fullName || latestAnalysis.patientId.name : 'Unknown',
       imageData: latestAnalysis.imageData,
       createdAt: latestAnalysis.createdAt,
-      isSimulation: latestAnalysis.isSimulation
+      isSimulation: false // Pastikan selalu mengembalikan false
     };
     
     res.json(result);
