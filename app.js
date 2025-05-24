@@ -17,7 +17,7 @@ import mongoose from 'mongoose';
 import RetinaAnalysis from './models/RetinaAnalysis.js';
 import User from './models/User.js';
 import Patient from './models/Patient.js';
-import compression from 'express-compression'; // Tambahkan kompresi untuk respons lebih cepat
+import compression from 'compression'; // Ubah dari express-compression menjadi compression
 
 // Konfigurasi environment variables
 dotenv.config();
@@ -29,7 +29,7 @@ const app = express();
 const httpServer = createServer(app);
 
 // Tambahkan middleware kompresi untuk mempercepat respons
-app.use(compression({ brotli: { enabled: true, zlib: {} } }));
+app.use(compression()); // Ubah konfigurasi kompresi
 
 // Tingkatkan batas ukuran request untuk upload gambar
 app.use(express.json({ limit: '50mb' }));
