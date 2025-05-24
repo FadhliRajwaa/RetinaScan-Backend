@@ -76,21 +76,21 @@ const checkFlaskApiStatus = async () => {
         
         // Verifikasi bahwa respons memiliki format yang diharapkan
         if (response.data && (response.data.status === 'online' || response.data.service === 'retinopathy-api')) {
-          flaskApiStatus.available = true;
-          flaskApiStatus.info = response.data;
-          flaskApiStatus.lastSuccessfulResponse = response.data;
-          flaskApiStatus.lastCheck = Date.now();
-          flaskApiStatus.checked = true;
-          flaskApiStatus.retryCount = 0; // Reset retry counter
-          flaskApiStatus.fallbackMode = false; // Pastikan fallback mode dinonaktifkan
-          flaskApiStatus.activeUrl = FLASK_API_BASE_URL; // Simpan URL yang aktif
-          
-          console.log('Flask API tersedia:', flaskApiStatus.info.model_name || 'Tidak diketahui');
-          console.log('Kelas model:', flaskApiStatus.info.classes ? flaskApiStatus.info.classes.join(', ') : 'Tidak diketahui');
-          console.log('Versi API:', flaskApiStatus.info.api_version || '1.0.0');
-          
-          success = true;
-          return true;
+        flaskApiStatus.available = true;
+        flaskApiStatus.info = response.data;
+        flaskApiStatus.lastSuccessfulResponse = response.data;
+        flaskApiStatus.lastCheck = Date.now();
+        flaskApiStatus.checked = true;
+        flaskApiStatus.retryCount = 0; // Reset retry counter
+        flaskApiStatus.fallbackMode = false; // Pastikan fallback mode dinonaktifkan
+        flaskApiStatus.activeUrl = FLASK_API_BASE_URL; // Simpan URL yang aktif
+        
+        console.log('Flask API tersedia:', flaskApiStatus.info.model_name || 'Tidak diketahui');
+        console.log('Kelas model:', flaskApiStatus.info.classes ? flaskApiStatus.info.classes.join(', ') : 'Tidak diketahui');
+        console.log('Versi API:', flaskApiStatus.info.api_version || '1.0.0');
+        
+        success = true;
+        return true;
         } else {
           console.log('Flask API merespons tetapi format tidak sesuai:', response.data);
           lastError = new Error('Invalid API response format');
@@ -1000,17 +1000,17 @@ export const testFlaskConnection = async (req, res) => {
       })
       .catch(err => {
         console.log('Koneksi ke localhost juga gagal');
-        
-        // Ganti dengan localhost untuk testing
-        const localBaseUrl = 'http://localhost:5001';
+      
+      // Ganti dengan localhost untuk testing
+      const localBaseUrl = 'http://localhost:5001';
         const localInfoUrl = `${localBaseUrl}/`;
-        
-        try {
+      
+      try {
           // Buat rekomendasi berdasarkan hasil test
           const recommendations = generateRecommendations(mainTest, { success: false });
           
           return res.json({
-            success: false,
+          success: false,
             message: 'Koneksi ke Flask API dan localhost gagal',
             error: mainTest.error || 'Tidak dapat terhubung ke Flask API',
             recommendations,
@@ -1022,14 +1022,14 @@ export const testFlaskConnection = async (req, res) => {
             message: 'Terjadi kesalahan saat menguji koneksi',
             error: finalError.message
           });
-        }
-      });
+      }
+    });
   } catch (error) {
     console.error('Error saat menguji koneksi:', error);
     return res.status(500).json({
       success: false,
       message: 'Terjadi kesalahan saat menguji koneksi',
-      error: error.message
+      error: error.message 
     });
   }
 };
