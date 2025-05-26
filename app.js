@@ -71,22 +71,33 @@ if (!fs.existsSync(uploadsDir)) {
 
 // Middleware
 app.use(cors({
-  origin: [
-    process.env.VITE_FRONTEND_URL, 
-    process.env.VITE_DASHBOARD_URL, 
-    process.env.FLASK_API_URL,
-    'http://localhost:5173', 
-    'http://localhost:3000',
-    'http://localhost:5001',
-    'https://retinascan.onrender.com',
-    'https://retinascan-dashboard.onrender.com',
-    'https://retinascan-backend-eszo.onrender.com',
-    'https://flask-service-4ifc.onrender.com'
-  ],
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
+  origin: function(origin, callback) {
+    // Daftar origin yang diizinkan
+    const allowedOrigins = [
+      process.env.VITE_FRONTEND_URL, 
+      process.env.VITE_DASHBOARD_URL, 
+      process.env.FLASK_API_URL,
+      'http://localhost:5173', 
+      'http://localhost:3000',
+      'http://localhost:5001',
+      'https://retinascan.onrender.com',
+      'https://retinascan-dashboard.onrender.com',
+      'https://retinascan-backend-eszo.onrender.com',
+      'https://flask-service-4ifc.onrender.com',
+      'https://retinopathy-api.onrender.com'
+    ];
+    
+    // origin bisa null jika request berasal dari Postman atau curl
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      console.log('Origin rejected by CORS:', origin);
+      callback(null, false);
+    }
+  },
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
   credentials: true,
-  // Tambahkan cache untuk preflight requests
   maxAge: 86400 // 24 jam
 }));
 
@@ -102,17 +113,19 @@ app.use((req, res, next) => {
     'https://retinascan.onrender.com',
     'https://retinascan-dashboard.onrender.com',
     'https://retinascan-backend-eszo.onrender.com',
-    'https://flask-service-4ifc.onrender.com'
+    'https://flask-service-4ifc.onrender.com',
+    'https://retinopathy-api.onrender.com'
   ];
   
   const origin = req.headers.origin;
-  if (allowedOrigins.includes(origin)) {
+  if (origin && allowedOrigins.includes(origin)) {
     res.header('Access-Control-Allow-Origin', origin);
   }
   
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
   res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
   res.header('Access-Control-Allow-Credentials', 'true');
+  res.header('Access-Control-Max-Age', '86400'); // 24 jam
   
   // Intercept OPTIONS method
   if (req.method === 'OPTIONS') {
