@@ -97,6 +97,142 @@ router.get('/latest', authMiddleware, async (req, res) => {
     res.status(500).json({ message: 'Gagal mengambil analisis terbaru', error: error.message });
   }
 });
+router.get('/history', authMiddleware, async (req, res) => {
+  try {
+    const RetinaAnalysis = req.app.get('models').RetinaAnalysis;
+    
+    const analyses = await RetinaAnalysis.find({
+      doctorId: req.user.id
+    })
+    .populate({
+      path: 'patientId',
+      select: 'name fullName gender age'
+    })
+    .sort({ createdAt: -1 });
+    
+    // Map hasil untuk format yang konsisten dengan frontend
+    const mappedAnalyses = analyses.map(analysis => {
+      return {
+        id: analysis._id,
+        patientId: analysis.patientId ? analysis.patientId._id : null,
+        patientName: analysis.patientId ? analysis.patientId.fullName || analysis.patientId.name : 'Unknown',
+        imageUrl: `/uploads/${analysis.imageDetails.filename}`,
+        createdAt: analysis.createdAt,
+        severity: analysis.results.classification,
+        severityLevel: analysis.results.severityLevel || 0,
+        confidence: analysis.results.confidence,
+        recommendation: analysis.recommendation,
+        isSimulation: analysis.results.isSimulation || false
+      };
+    });
+    
+    res.json(mappedAnalyses);
+  } catch (error) {
+    console.error('Error saat mengambil riwayat analisis:', error);
+    res.status(500).json({ message: 'Gagal mengambil riwayat analisis', error: error.message });
+  }
+});
+router.get('/report', authMiddleware, async (req, res) => {
+  try {
+    const RetinaAnalysis = req.app.get('models').RetinaAnalysis;
+    
+    const latestAnalysis = await RetinaAnalysis.findOne({ 
+      doctorId: req.user.id
+    })
+    .populate({
+      path: 'patientId',
+      select: 'name fullName gender age dateOfBirth'
+    })
+    .sort({ createdAt: -1 });
+    
+    if (!latestAnalysis) {
+      return res.status(404).json({ message: 'Belum ada analisis yang dilakukan' });
+    }
+    
+    // Format data untuk laporan
+    const report = {
+      id: latestAnalysis._id,
+      patientId: latestAnalysis.patientId ? latestAnalysis.patientId._id : null,
+      patientName: latestAnalysis.patientId ? latestAnalysis.patientId.fullName || latestAnalysis.patientId.name : 'Unknown',
+      patientGender: latestAnalysis.patientId ? latestAnalysis.patientId.gender : null,
+      patientAge: latestAnalysis.patientId ? latestAnalysis.patientId.age : null,
+      patientDOB: latestAnalysis.patientId ? latestAnalysis.patientId.dateOfBirth : null,
+      imageUrl: `/uploads/${latestAnalysis.imageDetails.filename}`,
+      createdAt: latestAnalysis.createdAt,
+      severity: latestAnalysis.results.classification,
+      severityLevel: latestAnalysis.results.severityLevel || 0,
+      confidence: latestAnalysis.results.confidence,
+      recommendation: latestAnalysis.recommendation,
+      additionalNotes: latestAnalysis.notes,
+      raw_prediction: latestAnalysis.results,
+      isSimulation: latestAnalysis.results.isSimulation || false
+    };
+    
+    res.json(report);
+  } catch (error) {
+    console.error('Error saat mengambil laporan analisis:', error);
+    res.status(500).json({ message: 'Gagal mengambil laporan analisis', error: error.message });
+  }
+});
+router.get('/debug-flask-urls', authMiddleware, async (req, res) => {
+  try {
+    // Daftar semua URL potensial
+    const urls = [
+      process.env.FLASK_API_URL || 'https://flask-service-4ifc.onrender.com',
+      'https://retinopathy-api.onrender.com',
+      'https://retinascan-flask-api.onrender.com',
+      'http://localhost:5001',
+      'http://localhost:5000',
+      'http://127.0.0.1:5000',
+      'http://192.168.100.7:5000'
+    ];
+    
+    const results = [];
+    
+    // Uji setiap URL
+    for (const baseUrl of urls) {
+      const infoUrl = `${baseUrl}/`;
+      
+      try {
+        console.log(`Testing connection to ${infoUrl}...`);
+        const startTime = Date.now();
+        const response = await axios.get(infoUrl, { timeout: 10000 });
+        const endTime = Date.now();
+        
+        results.push({
+          url: baseUrl,
+          status: 'success',
+          responseTime: endTime - startTime,
+          data: response.data,
+          statusCode: response.status
+        });
+        
+        console.log(`✅ Connection to ${infoUrl} successful`);
+      } catch (error) {
+        results.push({
+          url: baseUrl,
+          status: 'error',
+          error: error.message,
+          code: error.code,
+          statusCode: error.response?.status
+        });
+        
+        console.log(`❌ Connection to ${infoUrl} failed: ${error.message}`);
+      }
+    }
+    
+    // Return hasil pengujian
+    res.json({
+      results,
+      env: {
+        FLASK_API_URL: process.env.FLASK_API_URL || '(not set)'
+      }
+    });
+  } catch (error) {
+    console.error('Error testing Flask API URLs:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
 router.get('/:id', authMiddleware, async (req, res) => {
   try {
     const RetinaAnalysis = req.app.get('models').RetinaAnalysis;
@@ -155,67 +291,6 @@ router.delete('/:id', authMiddleware, async (req, res) => {
   } catch (error) {
     console.error('Error saat menghapus analisis:', error);
     res.status(500).json({ message: 'Gagal menghapus analisis', error: error.message });
-  }
-});
-
-// Endpoint untuk menguji semua URL Flask API potensial
-router.get('/debug-flask-urls', authMiddleware, async (req, res) => {
-  try {
-    // Daftar semua URL potensial
-    const urls = [
-      process.env.FLASK_API_URL || 'https://flask-service-4ifc.onrender.com',
-      'https://retinopathy-api.onrender.com',
-      'https://retinascan-flask-api.onrender.com',
-      'http://localhost:5001',
-      'http://localhost:5000',
-      'http://127.0.0.1:5000',
-      'http://192.168.100.7:5000'
-    ];
-    
-    const results = [];
-    
-    // Uji setiap URL
-    for (const baseUrl of urls) {
-      const infoUrl = `${baseUrl}/`;
-      
-      try {
-        console.log(`Testing connection to ${infoUrl}...`);
-        const startTime = Date.now();
-        const response = await axios.get(infoUrl, { timeout: 10000 });
-        const endTime = Date.now();
-        
-        results.push({
-          url: baseUrl,
-          status: 'success',
-          responseTime: endTime - startTime,
-          data: response.data,
-          statusCode: response.status
-        });
-        
-        console.log(`✅ Connection to ${infoUrl} successful`);
-      } catch (error) {
-        results.push({
-          url: baseUrl,
-          status: 'error',
-          error: error.message,
-          code: error.code,
-          statusCode: error.response?.status
-        });
-        
-        console.log(`❌ Connection to ${infoUrl} failed: ${error.message}`);
-      }
-    }
-    
-    // Return hasil pengujian
-    res.json({
-      results,
-      env: {
-        FLASK_API_URL: process.env.FLASK_API_URL || '(not set)'
-      }
-    });
-  } catch (error) {
-    console.error('Error testing Flask API URLs:', error);
-    res.status(500).json({ error: error.message });
   }
 });
 
