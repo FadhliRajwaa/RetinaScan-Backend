@@ -1,7 +1,12 @@
 import mongoose from 'mongoose';
 
 const retinaAnalysisSchema = new mongoose.Schema({
-  userId: {
+  analysisId: {
+    type: String,
+    required: true,
+    unique: true
+  },
+  doctorId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
     required: true
@@ -11,43 +16,57 @@ const retinaAnalysisSchema = new mongoose.Schema({
     ref: 'Patient',
     required: true
   },
-  imagePath: {
-    type: String, // Tetap simpan path asli jika perlu referensi
-    required: false
+  timestamp: {
+    type: Date,
+    default: Date.now
   },
-  imageData: {
-    type: String, // Data gambar dalam format base64
-    required: false
+  imageDetails: {
+    originalname: {
+      type: String,
+      required: true
+    },
+    mimetype: {
+      type: String,
+      required: true
+    },
+    filename: {
+      type: String,
+      required: true
+    },
+    path: {
+      type: String,
+      required: true
+    },
+    size: {
+      type: Number,
+      required: true
+    }
   },
-  originalFilename: {
+  results: {
+    classification: {
+      type: String,
+      required: true,
+      enum: ['No DR', 'Mild', 'Moderate', 'Severe', 'Proliferative DR']
+    },
+    confidence: {
+      type: Number,
+      required: true,
+      min: 0,
+      max: 1
+    },
+    isSimulation: {
+      type: Boolean,
+      default: false,
+      description: 'Menandakan hasil dari mode simulasi Flask API'
+    }
+  },
+  recommendation: {
     type: String,
-    required: true
-  },
-  severity: {
-    type: String,
-    required: true
-  },
-  severityLevel: {
-    type: Number,
-    required: true
-  },
-  confidence: {
-    type: Number,
-    required: true
+    default: ''
   },
   notes: {
     type: String,
     default: ''
-  },
-  isSimulation: {
-    type: Boolean,
-    default: false,
-    description: 'Menandakan hasil dari mode simulasi Flask API atau data mock'
-  },
-  flaskApiUsed: {
-    type: String,
-    required: false,
-    description: 'URL Flask API yang digunakan saat analisis'
   }
 }, { timestamps: true });
 

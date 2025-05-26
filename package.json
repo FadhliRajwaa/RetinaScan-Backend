@@ -28,7 +28,9 @@
     "start": "node app.js",
     "dev": "nodemon app.js",
     "flask": "cd flask_service && python app.py",
-    "dev:all": "concurrently \"npm run dev\" \"npm run flask\""
+    "dev:all": "concurrently \"npm run dev\" \"npm run flask\"",
+    "test:flask": "node test-flask-api.js",
+    "test:all": "node app.js & node test-flask-api.js"
   },
   "devDependencies": {
     "concurrently": "^8.2.2"
