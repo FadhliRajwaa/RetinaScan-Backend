@@ -15,9 +15,8 @@ dotenv.config();
 
 // Daftar semua URL Flask API yang mungkin
 const FLASK_API_URLS = [
-  process.env.FLASK_API_URL || 'https://flask-service-4ifc.onrender.com',
-  'https://retinopathy-api.onrender.com',
-  'https://retinascan-flask-api.onrender.com',
+  process.env.FLASK_API_URL || 'https://fadhlirajwaa-retinascan-api.hf.space',
+  'https://fadhlirajwaa-retinascan-api.hf.space',
   'http://localhost:5001',
   'http://localhost:5000',
   'http://127.0.0.1:5000',
