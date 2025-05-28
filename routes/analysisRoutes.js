@@ -182,6 +182,7 @@ router.get('/history', authMiddleware, async (req, res) => {
         patientId: analysis.patientId ? analysis.patientId._id : null,
         patientName: analysis.patientId ? analysis.patientId.fullName || analysis.patientId.name : 'Unknown',
         imageUrl: `/uploads/${analysis.imageDetails.filename}`,
+        imageData: analysis.imageData,
         createdAt: analysis.createdAt,
         severity: severity, // Gunakan nilai yang sudah diterjemahkan
         originalSeverity: classification, // Simpan nilai asli
@@ -256,6 +257,7 @@ router.get('/report', authMiddleware, async (req, res) => {
       patientAge: latestAnalysis.patientId ? latestAnalysis.patientId.age : null,
       patientDOB: latestAnalysis.patientId ? latestAnalysis.patientId.dateOfBirth : null,
       imageUrl: `/uploads/${latestAnalysis.imageDetails.filename}`,
+      imageData: latestAnalysis.imageData,
       createdAt: latestAnalysis.createdAt,
       classification: latestAnalysis.results.classification, // Nilai asli
       severity: severity, // Nilai yang sudah diterjemahkan
@@ -348,7 +350,56 @@ router.get('/:id', authMiddleware, async (req, res) => {
       return res.status(404).json({ message: 'Analisis tidak ditemukan' });
     }
     
-    res.json(analysis);
+    // Mapping dari kelas bahasa Inggris ke Indonesia
+    const severityMapping = {
+      'No DR': 'Tidak ada',
+      'Mild': 'Ringan',
+      'Moderate': 'Sedang',
+      'Severe': 'Berat',
+      'Proliferative DR': 'Sangat Berat'
+    };
+    
+    // Mapping untuk severityLevel
+    const severityLevelMapping = {
+      'Tidak ada': 0,
+      'No DR': 0,
+      'Ringan': 1,
+      'Mild': 1,
+      'Sedang': 2,
+      'Moderate': 2,
+      'Berat': 3,
+      'Severe': 3,
+      'Sangat Berat': 4,
+      'Proliferative DR': 4
+    };
+    
+    // Tentukan severity dalam bahasa Indonesia
+    const classification = analysis.results.classification;
+    const severity = severityMapping[classification] || classification;
+    
+    // Tentukan severityLevel berdasarkan severity
+    const severityLevel = severityLevelMapping[classification] || 
+                          severityLevelMapping[severity] || 0;
+    
+    res.json({
+      id: analysis._id,
+      patientId: analysis.patientId ? analysis.patientId._id : null,
+      patientName: analysis.patientId ? analysis.patientId.fullName || analysis.patientId.name : 'Unknown',
+      patientGender: analysis.patientId ? analysis.patientId.gender : null,
+      patientAge: analysis.patientId ? analysis.patientId.age : null,
+      patientDOB: analysis.patientId ? analysis.patientId.dateOfBirth : null,
+      imageUrl: `/uploads/${analysis.imageDetails.filename}`,
+      imageData: analysis.imageData,
+      createdAt: analysis.createdAt,
+      classification: analysis.results.classification, // Nilai asli
+      severity: severity, // Nilai yang sudah diterjemahkan
+      severityLevel: severityLevel,
+      confidence: analysis.results.confidence,
+      recommendation: analysis.recommendation,
+      additionalNotes: analysis.notes || analysis.recommendation,
+      raw_prediction: analysis.results,
+      isSimulation: analysis.results.isSimulation || false
+    });
   } catch (error) {
     console.error('Error saat mengambil detail analisis:', error);
     res.status(500).json({ message: 'Gagal mengambil detail analisis', error: error.message });

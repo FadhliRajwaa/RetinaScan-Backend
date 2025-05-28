@@ -479,8 +479,8 @@ export const processRetinaImage = async (req, res) => {
         recommendation = 'Tidak dapat menentukan rekomendasi. Silakan konsultasi dengan dokter spesialis mata.';
     }
     
-    // Buat dokumen analisis baru
-    const newAnalysis = new RetinaAnalysis({
+    // Persiapkan data analisis
+    const analysisData = {
       analysisId,
       patientId: req.body.patientId,
       doctorId: req.user.id,
@@ -493,7 +493,31 @@ export const processRetinaImage = async (req, res) => {
       },
       recommendation,
       notes: req.body.notes || ''
-    });
+    };
+    
+    // Cek apakah harus menyimpan gambar sebagai base64
+    if (req.body.saveAsBase64 === 'true' || req.body.imageData) {
+      try {
+        // Jika imageData sudah disediakan dari frontend, gunakan langsung
+        if (req.body.imageData) {
+          console.log('Menggunakan imageData yang disediakan dari frontend');
+          analysisData.imageData = req.body.imageData;
+        } else {
+          // Baca file gambar dan konversi ke base64
+          console.log('Mengkonversi gambar ke base64 untuk disimpan di database');
+          const filePath = path.join(process.cwd(), req.file.path);
+          const fileData = fs.readFileSync(filePath);
+          const base64Image = `data:${req.file.mimetype};base64,${fileData.toString('base64')}`;
+          analysisData.imageData = base64Image;
+        }
+      } catch (error) {
+        console.error('Error saat mengkonversi gambar ke base64:', error);
+        // Lanjutkan tanpa imageData jika gagal
+      }
+    }
+    
+    // Buat dokumen analisis baru
+    const newAnalysis = new RetinaAnalysis(analysisData);
     
     // Simpan analisis ke database
     await newAnalysis.save();
@@ -521,6 +545,7 @@ export const processRetinaImage = async (req, res) => {
         patientId: req.body.patientId,
         timestamp,
         imageUrl: `/uploads/${req.file.filename}`,
+        imageData: analysisData.imageData, // Tambahkan imageData ke respons jika ada
         results: {
           classification: predictionResult.class, // Nilai asli dalam bahasa Inggris
           severity: severity, // Nilai yang sudah diterjemahkan ke Indonesia

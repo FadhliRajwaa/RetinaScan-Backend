@@ -42,6 +42,10 @@ const retinaAnalysisSchema = new mongoose.Schema({
       required: true
     }
   },
+  imageData: {
+    type: String,
+    description: 'Gambar dalam format base64'
+  },
   results: {
     classification: {
       type: String,
