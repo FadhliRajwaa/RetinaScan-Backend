@@ -426,17 +426,48 @@ export const processRetinaImage = async (req, res) => {
       predictionResult = simulatePrediction(req.file.originalname);
     }
     
+    // Mapping dari kelas bahasa Inggris ke Indonesia
+    const severityMapping = {
+      'No DR': 'Tidak ada',
+      'Mild': 'Ringan',
+      'Moderate': 'Sedang',
+      'Severe': 'Berat',
+      'Proliferative DR': 'Sangat Berat'
+    };
+    
+    // Mapping untuk severityLevel
+    const severityLevelMapping = {
+      'Tidak ada': 0,
+      'No DR': 0,
+      'Ringan': 1,
+      'Mild': 1,
+      'Sedang': 2,
+      'Moderate': 2,
+      'Berat': 3,
+      'Severe': 3,
+      'Sangat Berat': 4,
+      'Proliferative DR': 4
+    };
+    
+    // Tentukan severity dalam bahasa Indonesia
+    const classification = predictionResult.class;
+    const severity = severityMapping[classification] || classification;
+    
+    // Tentukan severityLevel berdasarkan severity
+    const severityLevel = severityLevelMapping[classification] || 
+                          severityLevelMapping[severity] || 0;
+    
     // Tentukan rekomendasi berdasarkan hasil klasifikasi
     let recommendation = '';
-    switch (predictionResult.class) {
+    switch (classification) {
       case 'No DR':
-        recommendation = 'Tidak ditemukan tanda-tanda Diabetic Retinopathy. Lanjutkan pemeriksaan rutin tahunan.';
+        recommendation = 'Tidak ditemukan tanda-tanda Diabetic Retinopathy. Lakukan pemeriksaan rutin setiap tahun.';
         break;
       case 'Mild':
-        recommendation = 'Ditemukan tanda-tanda awal Diabetic Retinopathy. Disarankan untuk kontrol dalam 6-12 bulan.';
+        recommendation = 'Ditemukan tanda-tanda awal Diabetic Retinopathy. Disarankan untuk kontrol gula darah dan tekanan darah. Pemeriksaan ulang dalam 9-12 bulan.';
         break;
       case 'Moderate':
-        recommendation = 'Ditemukan Diabetic Retinopathy tingkat sedang. Disarankan untuk konsultasi dengan dokter spesialis mata dalam 3-6 bulan.';
+        recommendation = 'Ditemukan Diabetic Retinopathy tingkat sedang. Disarankan untuk konsultasi dengan dokter spesialis mata dalam 6 bulan.';
         break;
       case 'Severe':
         recommendation = 'Ditemukan Diabetic Retinopathy tingkat lanjut. Disarankan untuk segera konsultasi dengan dokter spesialis mata dalam 1 bulan.';
@@ -474,6 +505,8 @@ export const processRetinaImage = async (req, res) => {
         id: newAnalysis._id,
         timestamp,
         classification: predictionResult.class,
+        severity: severity,
+        severityLevel: severityLevel,
         patientId: req.body.patientId,
         doctorId: req.user.id
       });
@@ -489,7 +522,9 @@ export const processRetinaImage = async (req, res) => {
         timestamp,
         imageUrl: `/uploads/${req.file.filename}`,
         results: {
-          classification: predictionResult.class,
+          classification: predictionResult.class, // Nilai asli dalam bahasa Inggris
+          severity: severity, // Nilai yang sudah diterjemahkan ke Indonesia
+          severityLevel: severityLevel, // Level keparahan (0-4)
           confidence: predictionResult.confidence,
           isSimulation: predictionResult.isSimulation
         },

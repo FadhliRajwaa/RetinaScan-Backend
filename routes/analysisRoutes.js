@@ -79,10 +79,44 @@ router.get('/latest', authMiddleware, async (req, res) => {
       return res.status(404).json({ message: 'Belum ada analisis yang dilakukan' });
     }
     
+    // Mapping dari kelas bahasa Inggris ke Indonesia
+    const severityMapping = {
+      'No DR': 'Tidak ada',
+      'Mild': 'Ringan',
+      'Moderate': 'Sedang',
+      'Severe': 'Berat',
+      'Proliferative DR': 'Sangat Berat'
+    };
+    
+    // Mapping untuk severityLevel
+    const severityLevelMapping = {
+      'Tidak ada': 0,
+      'No DR': 0,
+      'Ringan': 1,
+      'Mild': 1,
+      'Sedang': 2,
+      'Moderate': 2,
+      'Berat': 3,
+      'Severe': 3,
+      'Sangat Berat': 4,
+      'Proliferative DR': 4
+    };
+    
+    // Tentukan severity dalam bahasa Indonesia
+    const classification = latestAnalysis.results.classification;
+    const severity = severityMapping[classification] || classification;
+    
+    // Tentukan severityLevel berdasarkan severity
+    const severityLevel = severityLevelMapping[classification] || 
+                          severityLevelMapping[severity] || 0;
+    
     const result = {
-      classification: latestAnalysis.results.classification,
+      classification: latestAnalysis.results.classification, // Nilai asli
+      severity: severity, // Nilai yang sudah diterjemahkan
+      severityLevel: severityLevel,
       confidence: latestAnalysis.results.confidence,
       recommendation: latestAnalysis.recommendation,
+      notes: latestAnalysis.notes || latestAnalysis.recommendation,
       analysisId: latestAnalysis._id,
       patientId: latestAnalysis.patientId,
       patientName: latestAnalysis.patientId ? latestAnalysis.patientId.fullName || latestAnalysis.patientId.name : 'Unknown',
@@ -110,18 +144,51 @@ router.get('/history', authMiddleware, async (req, res) => {
     })
     .sort({ createdAt: -1 });
     
+    // Mapping dari kelas bahasa Inggris ke Indonesia
+    const severityMapping = {
+      'No DR': 'Tidak ada',
+      'Mild': 'Ringan',
+      'Moderate': 'Sedang',
+      'Severe': 'Berat',
+      'Proliferative DR': 'Sangat Berat'
+    };
+    
+    // Mapping untuk severityLevel
+    const severityLevelMapping = {
+      'Tidak ada': 0,
+      'No DR': 0,
+      'Ringan': 1,
+      'Mild': 1,
+      'Sedang': 2,
+      'Moderate': 2,
+      'Berat': 3,
+      'Severe': 3,
+      'Sangat Berat': 4,
+      'Proliferative DR': 4
+    };
+    
     // Map hasil untuk format yang konsisten dengan frontend
     const mappedAnalyses = analyses.map(analysis => {
+      // Tentukan severity dalam bahasa Indonesia
+      const classification = analysis.results.classification;
+      const severity = severityMapping[classification] || classification;
+      
+      // Tentukan severityLevel berdasarkan severity
+      const severityLevel = severityLevelMapping[classification] || 
+                            severityLevelMapping[severity] || 0;
+      
       return {
         id: analysis._id,
         patientId: analysis.patientId ? analysis.patientId._id : null,
         patientName: analysis.patientId ? analysis.patientId.fullName || analysis.patientId.name : 'Unknown',
         imageUrl: `/uploads/${analysis.imageDetails.filename}`,
         createdAt: analysis.createdAt,
-        severity: analysis.results.classification,
-        severityLevel: analysis.results.severityLevel || 0,
+        severity: severity, // Gunakan nilai yang sudah diterjemahkan
+        originalSeverity: classification, // Simpan nilai asli
+        severityLevel: severityLevel, // Tambahkan severityLevel
         confidence: analysis.results.confidence,
         recommendation: analysis.recommendation,
+        notes: analysis.notes || analysis.recommendation, // Pastikan notes ada
         isSimulation: analysis.results.isSimulation || false
       };
     });
@@ -149,6 +216,37 @@ router.get('/report', authMiddleware, async (req, res) => {
       return res.status(404).json({ message: 'Belum ada analisis yang dilakukan' });
     }
     
+    // Mapping dari kelas bahasa Inggris ke Indonesia
+    const severityMapping = {
+      'No DR': 'Tidak ada',
+      'Mild': 'Ringan',
+      'Moderate': 'Sedang',
+      'Severe': 'Berat',
+      'Proliferative DR': 'Sangat Berat'
+    };
+    
+    // Mapping untuk severityLevel
+    const severityLevelMapping = {
+      'Tidak ada': 0,
+      'No DR': 0,
+      'Ringan': 1,
+      'Mild': 1,
+      'Sedang': 2,
+      'Moderate': 2,
+      'Berat': 3,
+      'Severe': 3,
+      'Sangat Berat': 4,
+      'Proliferative DR': 4
+    };
+    
+    // Tentukan severity dalam bahasa Indonesia
+    const classification = latestAnalysis.results.classification;
+    const severity = severityMapping[classification] || classification;
+    
+    // Tentukan severityLevel berdasarkan severity
+    const severityLevel = severityLevelMapping[classification] || 
+                          severityLevelMapping[severity] || 0;
+    
     // Format data untuk laporan
     const report = {
       id: latestAnalysis._id,
@@ -159,11 +257,12 @@ router.get('/report', authMiddleware, async (req, res) => {
       patientDOB: latestAnalysis.patientId ? latestAnalysis.patientId.dateOfBirth : null,
       imageUrl: `/uploads/${latestAnalysis.imageDetails.filename}`,
       createdAt: latestAnalysis.createdAt,
-      severity: latestAnalysis.results.classification,
-      severityLevel: latestAnalysis.results.severityLevel || 0,
+      classification: latestAnalysis.results.classification, // Nilai asli
+      severity: severity, // Nilai yang sudah diterjemahkan
+      severityLevel: severityLevel,
       confidence: latestAnalysis.results.confidence,
       recommendation: latestAnalysis.recommendation,
-      additionalNotes: latestAnalysis.notes,
+      additionalNotes: latestAnalysis.notes || latestAnalysis.recommendation,
       raw_prediction: latestAnalysis.results,
       isSimulation: latestAnalysis.results.isSimulation || false
     };
