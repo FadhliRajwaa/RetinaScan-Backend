@@ -6,6 +6,7 @@ import path from 'path';
 import RetinaAnalysis from '../models/RetinaAnalysis.js';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
+import { v4 as uuidv4 } from 'uuid';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -355,77 +356,102 @@ const simulatePrediction = (filename) => {
   };
 };
 
+// Fungsi untuk mendapatkan prediksi dari Flask API
+const getPredictionFromFlaskApi = async (file, imageData) => {
+  console.log(`Mencoba mendapatkan prediksi dari Flask API: ${FLASK_API_URL}`);
+  
+  try {
+    if (imageData && imageData.startsWith('data:')) {
+      // Jika imageData tersedia, gunakan itu (lebih efisien)
+      console.log('Menggunakan imageData yang disediakan untuk prediksi');
+      
+      // Ambil bagian base64 saja (tanpa prefix data:image/...)
+      const base64Data = imageData.split(',')[1];
+      
+      // Kirim request ke Flask API
+      const response = await axios.post(FLASK_API_URL, {
+        image_data: base64Data
+      }, {
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        timeout: 30000 // 30 detik timeout
+      });
+      
+      console.log('Prediksi berhasil dengan imageData:', response.data);
+      return {
+        class: response.data.class,
+        confidence: response.data.confidence,
+        isSimulation: response.data.is_simulation || false
+      };
+    } else if (file) {
+      // Jika tidak ada imageData, gunakan file yang diupload
+      console.log('Menggunakan file yang diupload untuk prediksi');
+      
+      // Buat FormData untuk mengirim file
+      const formData = new FormData();
+      formData.append('file', fs.createReadStream(file.path));
+      
+      // Kirim request ke Flask API
+      const response = await axios.post(FLASK_API_URL, formData, {
+        headers: {
+          ...formData.getHeaders()
+        },
+        timeout: 30000 // 30 detik timeout
+      });
+      
+      console.log('Prediksi berhasil dengan file:', response.data);
+      return {
+        class: response.data.class,
+        confidence: response.data.confidence,
+        isSimulation: response.data.is_simulation || false
+      };
+    } else {
+      throw new Error('Tidak ada data gambar yang valid untuk prediksi');
+    }
+  } catch (error) {
+    console.error('Error saat memprediksi gambar:', error.message);
+    throw error;
+  }
+};
+
 // Proses file retina untuk analisis
 export const processRetinaImage = async (req, res) => {
   try {
-    // Dapatkan referensi ke model analisis
-    const RetinaAnalysis = req.app.get('models').RetinaAnalysis;
-    
-    // Cek apakah file ada
-    if (!req.file) {
-      return res.status(400).json({ message: 'Tidak ada file yang diunggah' });
+    if (!req.file && !req.body.imageData) {
+      return res.status(400).json({ message: 'File gambar tidak ditemukan' });
     }
 
-    // Cek apakah file adalah gambar
-    if (!req.file.mimetype.startsWith('image/')) {
-      return res.status(400).json({ message: 'File harus berupa gambar' });
+    if (!req.body.patientId) {
+      return res.status(400).json({ message: 'Patient ID diperlukan' });
     }
 
-    // Buat ID unik untuk analisis
-    const analysisId = crypto.randomBytes(16).toString('hex');
-    const timestamp = new Date();
-    
-    // Simpan informasi file
-    const fileInfo = {
-      originalname: req.file.originalname,
-      mimetype: req.file.mimetype,
-      filename: req.file.filename,
-      path: req.file.path,
-      size: req.file.size
-    };
-    
-    // Periksa status Flask API
-    const apiAvailable = await checkFlaskApiStatus();
+    // Verifikasi bahwa pasien ada di database
+    const Patient = req.app.get('models').Patient;
+    const patient = await Patient.findById(req.body.patientId);
+    if (!patient) {
+      return res.status(404).json({ message: 'Pasien tidak ditemukan' });
+    }
+
+    // Gunakan analysisId sebagai identifier unik
+    const analysisId = uuidv4();
+    const timestamp = new Date().toISOString();
+
+    // Kirim gambar ke Flask API untuk analisis
     let predictionResult;
-    
-    if (apiAvailable && !flaskApiStatus.simulation) {
-      try {
-        console.log(`Flask API tersedia, mengirim gambar ke ${FLASK_API_URL} untuk prediksi...`);
-        
-        // Buat FormData untuk mengirim file
-        const formData = new FormData();
-        formData.append('file', fs.createReadStream(req.file.path));
-        
-        // Kirim request ke Flask API dengan timeout yang ditingkatkan
-        const predictionResponse = await axiosInstance.post(FLASK_API_URL, formData, {
-          headers: {
-            ...formData.getHeaders(),
-          },
-          timeout: 60000, // 60 detik timeout
-          maxRetries: 2,
-          retryDelay: 1000
-        });
-        
-        console.log('Prediksi berhasil:', predictionResponse.data);
-        
-        // Ekstrak hasil prediksi
-        predictionResult = {
-          class: predictionResponse.data.class,
-          confidence: predictionResponse.data.confidence,
-          isSimulation: false
-        };
-      } catch (predictionError) {
-        console.error('Error saat memprediksi gambar:', predictionError.message);
-        
-        // Jika terjadi error, gunakan simulasi sebagai fallback
-        console.log('Menggunakan mode simulasi sebagai fallback...');
-        predictionResult = simulatePrediction(req.file.originalname);
-      }
-    } else {
-      console.log('Flask API tidak tersedia, menggunakan mode simulasi...');
-      predictionResult = simulatePrediction(req.file.originalname);
+    let useSimulation = false;
+
+    try {
+      console.log('Mencoba mendapatkan prediksi dari Flask API...');
+      predictionResult = await getPredictionFromFlaskApi(req.file, req.body.imageData);
+      console.log('Hasil prediksi:', predictionResult);
+    } catch (flaskError) {
+      console.error('Error saat menghubungi Flask API, beralih ke mode simulasi:', flaskError);
+      useSimulation = true;
+      predictionResult = simulatePrediction(req.file ? req.file.filename : 'unknown');
+      console.log('Hasil simulasi:', predictionResult);
     }
-    
+
     // Mapping dari kelas bahasa Inggris ke Indonesia
     const severityMapping = {
       'No DR': 'Tidak ada',
@@ -434,7 +460,7 @@ export const processRetinaImage = async (req, res) => {
       'Severe': 'Berat',
       'Proliferative DR': 'Sangat Berat'
     };
-    
+
     // Mapping untuk severityLevel
     const severityLevelMapping = {
       'Tidak ada': 0,
@@ -448,85 +474,99 @@ export const processRetinaImage = async (req, res) => {
       'Sangat Berat': 4,
       'Proliferative DR': 4
     };
-    
+
     // Tentukan severity dalam bahasa Indonesia
-    const classification = predictionResult.class;
-    const severity = severityMapping[classification] || classification;
+    const severity = severityMapping[predictionResult.class] || predictionResult.class;
     
     // Tentukan severityLevel berdasarkan severity
-    const severityLevel = severityLevelMapping[classification] || 
-                          severityLevelMapping[severity] || 0;
+    const severityLevel = severityLevelMapping[predictionResult.class] || 
+                        severityLevelMapping[severity] || 0;
+
+    // Buat rekomendasi berdasarkan tingkat keparahan
+    let recommendation;
     
-    // Tentukan rekomendasi berdasarkan hasil klasifikasi
-    let recommendation = '';
-    switch (classification) {
-      case 'No DR':
-        recommendation = 'Tidak ditemukan tanda-tanda Diabetic Retinopathy. Lakukan pemeriksaan rutin setiap tahun.';
+    // Menggunakan rekomendasi yang sama persis dengan yang didefinisikan di flask_service/app.py
+    switch (severity) {
+      case 'Ringan':
+        recommendation = 'Kontrol gula darah dan tekanan darah. Pemeriksaan ulang dalam 9-12 bulan.';
         break;
-      case 'Mild':
-        recommendation = 'Ditemukan tanda-tanda awal Diabetic Retinopathy. Disarankan untuk kontrol gula darah dan tekanan darah. Pemeriksaan ulang dalam 9-12 bulan.';
+      case 'Sedang':
+        recommendation = 'Konsultasi dengan dokter spesialis mata. Pemeriksaan ulang dalam 6 bulan.';
         break;
-      case 'Moderate':
-        recommendation = 'Ditemukan Diabetic Retinopathy tingkat sedang. Disarankan untuk konsultasi dengan dokter spesialis mata dalam 6 bulan.';
+      case 'Berat':
+        recommendation = 'Rujukan segera ke dokter spesialis mata. Pemeriksaan ulang dalam 2-3 bulan.';
         break;
-      case 'Severe':
-        recommendation = 'Ditemukan Diabetic Retinopathy tingkat lanjut. Disarankan untuk segera konsultasi dengan dokter spesialis mata dalam 1 bulan.';
-        break;
-      case 'Proliferative DR':
-        recommendation = 'Ditemukan Diabetic Retinopathy proliferatif. Memerlukan penanganan segera oleh dokter spesialis mata.';
+      case 'Sangat Berat':
+        recommendation = 'Rujukan segera ke dokter spesialis mata untuk evaluasi dan kemungkinan tindakan laser atau operasi.';
         break;
       default:
-        recommendation = 'Tidak dapat menentukan rekomendasi. Silakan konsultasi dengan dokter spesialis mata.';
+        recommendation = 'Lakukan pemeriksaan rutin setiap tahun.';
     }
-    
-    // Persiapkan data analisis
+
+    // Buat data analisis
     const analysisData = {
       analysisId,
-      patientId: req.body.patientId,
       doctorId: req.user.id,
+      patientId: req.body.patientId,
       timestamp,
-      imageDetails: fileInfo,
+      imageDetails: req.file ? {
+        originalname: req.file.originalname,
+        mimetype: req.file.mimetype,
+        filename: req.file.filename,
+        path: req.file.path,
+        size: req.file.size
+      } : {
+        originalname: 'uploaded-image.jpg',
+        mimetype: 'image/jpeg',
+        filename: `uploaded-${Date.now()}.jpg`,
+        path: 'uploads/',
+        size: 0
+      },
       results: {
         classification: predictionResult.class,
         confidence: predictionResult.confidence,
-        isSimulation: predictionResult.isSimulation
+        isSimulation: useSimulation || predictionResult.isSimulation
       },
       recommendation,
-      notes: req.body.notes || ''
+      notes: recommendation // Menyimpan rekomendasi sebagai catatan juga
     };
-    
-    // Cek apakah harus menyimpan gambar sebagai base64
-    if (req.body.saveAsBase64 === 'true' || req.body.imageData) {
-      try {
-        // Jika imageData sudah disediakan dari frontend, gunakan langsung
-        if (req.body.imageData) {
-          console.log('Menggunakan imageData yang disediakan dari frontend');
-          analysisData.imageData = req.body.imageData;
-        } else {
-          // Baca file gambar dan konversi ke base64
+
+    // Cek apakah perlu menyimpan imageData dalam format base64
+    const saveAsBase64 = req.body.saveAsBase64 === 'true';
+
+    if (saveAsBase64) {
+      // Gunakan imageData dari request jika tersedia
+      if (req.body.imageData && req.body.imageData.startsWith('data:')) {
+        console.log('Menggunakan imageData yang diberikan dari frontend');
+        analysisData.imageData = req.body.imageData;
+      } else if (req.file) {
+        // Jika tidak ada imageData dari request, buat dari file yang diupload
+        try {
           console.log('Mengkonversi gambar ke base64 untuk disimpan di database');
           const filePath = path.join(process.cwd(), req.file.path);
           const fileData = fs.readFileSync(filePath);
           const base64Image = `data:${req.file.mimetype};base64,${fileData.toString('base64')}`;
           analysisData.imageData = base64Image;
+        } catch (error) {
+          console.error('Error saat mengkonversi gambar ke base64:', error);
+          // Lanjutkan tanpa imageData jika gagal
         }
-      } catch (error) {
-        console.error('Error saat mengkonversi gambar ke base64:', error);
-        // Lanjutkan tanpa imageData jika gagal
       }
     }
     
     // Buat dokumen analisis baru
+    const RetinaAnalysis = req.app.get('models').RetinaAnalysis;
     const newAnalysis = new RetinaAnalysis(analysisData);
     
     // Simpan analisis ke database
-    await newAnalysis.save();
+    const savedAnalysis = await newAnalysis.save();
+    console.log('Analisis berhasil disimpan dengan ID:', savedAnalysis._id);
     
     // Kirim notifikasi melalui Socket.IO jika tersedia
     const io = req.app.get('io');
     if (io) {
       io.emit('new-analysis', {
-        id: newAnalysis._id,
+        id: savedAnalysis._id,
         timestamp,
         classification: predictionResult.class,
         severity: severity,
@@ -540,21 +580,22 @@ export const processRetinaImage = async (req, res) => {
     res.status(201).json({
       message: 'Analisis retina berhasil',
       analysis: {
-        id: newAnalysis._id,
+        id: savedAnalysis._id,
+        _id: savedAnalysis._id, // Tambahkan _id juga untuk kompatibilitas frontend
         analysisId,
         patientId: req.body.patientId,
         timestamp,
-        imageUrl: `/uploads/${req.file.filename}`,
+        imageUrl: req.file ? `/uploads/${req.file.filename}` : null,
         imageData: analysisData.imageData, // Tambahkan imageData ke respons jika ada
         results: {
           classification: predictionResult.class, // Nilai asli dalam bahasa Inggris
           severity: severity, // Nilai yang sudah diterjemahkan ke Indonesia
           severityLevel: severityLevel, // Level keparahan (0-4)
           confidence: predictionResult.confidence,
-          isSimulation: predictionResult.isSimulation
+          isSimulation: predictionResult.isSimulation || useSimulation
         },
         recommendation,
-        notes: newAnalysis.notes
+        notes: recommendation // Tambahkan notes juga
       }
     });
   } catch (error) {
