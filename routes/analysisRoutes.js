@@ -294,4 +294,167 @@ router.delete('/:id', authMiddleware, async (req, res) => {
   }
 });
 
+// Endpoint untuk mendapatkan data statistik dashboard
+router.get('/dashboard/stats', authMiddleware, async (req, res) => {
+  try {
+    const RetinaAnalysis = req.app.get('models').RetinaAnalysis;
+    
+    // Mendapatkan semua analisis untuk dokter yang login
+    const analyses = await RetinaAnalysis.find({
+      doctorId: req.user.id
+    })
+    .populate({
+      path: 'patientId',
+      select: 'name fullName gender age'
+    })
+    .sort({ createdAt: -1 });
+    
+    // Menghitung distribusi tingkat keparahan
+    const severityCounts = {
+      'Tidak ada': 0,
+      'Ringan': 0,
+      'Sedang': 0,
+      'Berat': 0,
+      'Sangat Berat': 0
+    };
+    
+    // Mapping dari kelas bahasa Inggris ke Indonesia
+    const severityMapping = {
+      'No DR': 'Tidak ada',
+      'Mild': 'Ringan',
+      'Moderate': 'Sedang',
+      'Severe': 'Berat',
+      'Proliferative DR': 'Sangat Berat'
+    };
+    
+    analyses.forEach(analysis => {
+      const severity = analysis.results.classification;
+      const indonesianSeverity = severityMapping[severity] || severity;
+      
+      if (severityCounts.hasOwnProperty(indonesianSeverity)) {
+        severityCounts[indonesianSeverity]++;
+      } else {
+        // Jika tidak cocok dengan kategori yang ada, masukkan ke "Tidak ada"
+        severityCounts['Tidak ada']++;
+      }
+    });
+    
+    // Hitung persentase untuk setiap tingkat keparahan
+    const total = analyses.length || 1; // Hindari pembagian dengan nol
+    const severityDistribution = [
+      Math.round((severityCounts['Tidak ada'] / total) * 100),
+      Math.round((severityCounts['Ringan'] / total) * 100),
+      Math.round((severityCounts['Sedang'] / total) * 100),
+      Math.round((severityCounts['Berat'] / total) * 100),
+      Math.round((severityCounts['Sangat Berat'] / total) * 100)
+    ];
+    
+    // Menghitung tren analisis bulanan
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const monthlyData = Array(12).fill(0);
+    
+    analyses.forEach(analysis => {
+      const analysisDate = new Date(analysis.createdAt);
+      if (analysisDate.getFullYear() === currentYear) {
+        const month = analysisDate.getMonth();
+        monthlyData[month]++;
+      }
+    });
+    
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    
+    // Menghitung distribusi umur
+    const ageGroups = {
+      '0-10': 0,
+      '11-20': 0,
+      '21-30': 0,
+      '31-40': 0,
+      '41-50': 0,
+      '51-60': 0,
+      '61+': 0
+    };
+    
+    const patientsWithAge = analyses.filter(a => a.patientId && a.patientId.age);
+    
+    patientsWithAge.forEach(analysis => {
+      const age = analysis.patientId.age;
+      
+      if (age <= 10) ageGroups['0-10']++;
+      else if (age <= 20) ageGroups['11-20']++;
+      else if (age <= 30) ageGroups['21-30']++;
+      else if (age <= 40) ageGroups['31-40']++;
+      else if (age <= 50) ageGroups['41-50']++;
+      else if (age <= 60) ageGroups['51-60']++;
+      else ageGroups['61+']++;
+    });
+    
+    // Hitung persentase untuk setiap kelompok umur
+    const totalPatients = patientsWithAge.length || 1; // Hindari pembagian dengan nol
+    const ageDistribution = Object.values(ageGroups).map(count => 
+      Math.round((count / totalPatients) * 100)
+    );
+    
+    // Menghitung distribusi gender
+    let maleCount = 0;
+    let femaleCount = 0;
+    
+    patientsWithAge.forEach(analysis => {
+      const gender = analysis.patientId.gender;
+      if (gender === 'Laki-laki') maleCount++;
+      else if (gender === 'Perempuan') femaleCount++;
+    });
+    
+    const genderDistribution = [
+      Math.round((maleCount / totalPatients) * 100),
+      Math.round((femaleCount / totalPatients) * 100)
+    ];
+    
+    // Menghitung tingkat kepercayaan AI
+    let totalConfidence = 0;
+    let highestConfidence = 0;
+    let lowestConfidence = 100;
+    
+    analyses.forEach(analysis => {
+      const confidence = analysis.results.confidence * 100;
+      totalConfidence += confidence;
+      highestConfidence = Math.max(highestConfidence, confidence);
+      lowestConfidence = Math.min(lowestConfidence, confidence);
+    });
+    
+    const avgConfidence = analyses.length ? Math.round(totalConfidence / analyses.length) : 0;
+    
+    const confidenceLevels = {
+      average: avgConfidence,
+      highest: Math.round(highestConfidence),
+      lowest: Math.round(lowestConfidence)
+    };
+    
+    // Mengirim data dashboard
+    res.json({
+      severityDistribution,
+      monthlyTrend: {
+        categories: monthNames,
+        data: monthlyData
+      },
+      ageGroups: {
+        categories: Object.keys(ageGroups),
+        data: ageDistribution
+      },
+      genderDistribution,
+      confidenceLevels,
+      patients: patientsWithAge.map(a => ({
+        id: a.patientId._id,
+        name: a.patientId.fullName || a.patientId.name,
+        age: a.patientId.age,
+        gender: a.patientId.gender,
+        severity: severityMapping[a.results.classification] || a.results.classification
+      }))
+    });
+  } catch (error) {
+    console.error('Error mendapatkan data dashboard:', error);
+    res.status(500).json({ message: 'Gagal mendapatkan data dashboard', error: error.message });
+  }
+});
+
 export default router;
