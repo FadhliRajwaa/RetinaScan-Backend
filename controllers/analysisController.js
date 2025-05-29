@@ -384,8 +384,9 @@ const getPredictionFromFlaskApi = async (file, imageData) => {
           throw new Error('Base64 tidak valid');
         }
         
-        // Kirim request ke Flask API dengan endpoint baru untuk base64
-        const response = await axios.post(`${FLASK_API_URL}/predict-base64`, {
+        // Kirim request ke Flask API dengan endpoint predict-base64
+        // Gunakan FLASK_API_BASE_URL, bukan FLASK_API_URL yang sudah termasuk "/predict"
+        const response = await axios.post(`${FLASK_API_BASE_URL}/predict-base64`, {
           image_data: base64Data
         }, {
           headers: {
@@ -412,8 +413,9 @@ const getPredictionFromFlaskApi = async (file, imageData) => {
       const formData = new FormData();
       formData.append('file', fs.createReadStream(file.path));
       
-      // Kirim request ke Flask API
-      const response = await axios.post(`${FLASK_API_URL}/predict`, formData, {
+      // Kirim request ke Flask API endpoint predict
+      // Gunakan FLASK_API_URL yang sudah termasuk "/predict" untuk endpoint ini
+      const response = await axios.post(`${FLASK_API_URL}`, formData, {
         headers: {
           ...formData.getHeaders()
         },
