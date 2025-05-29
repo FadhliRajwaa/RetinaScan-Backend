@@ -84,19 +84,38 @@ app.use(cors({
       'https://retinascan-dashboard.onrender.com',
       'https://retinascan-backend-eszo.onrender.com',
       'https://flask-service-4ifc.onrender.com',
-      'https://retinopathy-api.onrender.com'
+      'https://retinopathy-api.onrender.com',
+      // Tambahkan domain khusus render.com
+      'https://retinascan.onrender.com',
+      'https://retinascan-frontend.onrender.com',
+      'https://retinascan-dashboard.onrender.com',
+      // Izinkan semua subdomain dari onrender.com untuk pengembangan
+      /\.onrender\.com$/
     ];
     
-    // origin bisa null jika request berasal dari Postman atau curl
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true);
+    // Jika tidak ada origin (misalnya Postman) atau origin ada dalam allowedOrigins
+    // atau origin adalah subdomain onrender.com yang cocok dengan regex
+    if (!origin) {
+      callback(null, true); // Izinkan permintaan tanpa origin (seperti dari Postman)
+    } else if (allowedOrigins.includes(origin)) {
+      callback(null, true); // Izinkan jika origin cocok persis
     } else {
-      console.log('Origin rejected by CORS:', origin);
-      callback(null, false);
+      // Periksa apakah cocok dengan pola regex onrender.com
+      const isAllowedPattern = allowedOrigins.some(allowedOrigin => 
+        allowedOrigin instanceof RegExp && allowedOrigin.test(origin)
+      );
+      
+      if (isAllowedPattern) {
+        callback(null, true); // Izinkan jika cocok dengan pola
+      } else {
+        console.log('Origin rejected by CORS:', origin);
+        callback(null, false);
+      }
     }
   },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
+  exposedHeaders: ['Content-Length', 'Authorization'],
   credentials: true,
   maxAge: 86400 // 24 jam
 }));
@@ -114,16 +133,26 @@ app.use((req, res, next) => {
     'https://retinascan-dashboard.onrender.com',
     'https://retinascan-backend-eszo.onrender.com',
     'https://flask-service-4ifc.onrender.com',
-    'https://retinopathy-api.onrender.com'
+    'https://retinopathy-api.onrender.com',
+    // Tambahkan domain khusus render.com
+    'https://retinascan.onrender.com',
+    'https://retinascan-frontend.onrender.com',
+    'https://retinascan-dashboard.onrender.com'
   ];
   
   const origin = req.headers.origin;
+  
+  // Periksa apakah origin ada dalam daftar yang diizinkan
   if (origin && allowedOrigins.includes(origin)) {
+    res.header('Access-Control-Allow-Origin', origin);
+  } else if (origin && /\.onrender\.com$/.test(origin)) {
+    // Izinkan semua subdomain onrender.com
     res.header('Access-Control-Allow-Origin', origin);
   }
   
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
   res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+  res.header('Access-Control-Expose-Headers', 'Content-Length, Authorization');
   res.header('Access-Control-Allow-Credentials', 'true');
   res.header('Access-Control-Max-Age', '86400'); // 24 jam
   
