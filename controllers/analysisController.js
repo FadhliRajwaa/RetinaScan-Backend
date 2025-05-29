@@ -384,8 +384,8 @@ const getPredictionFromFlaskApi = async (file, imageData) => {
           throw new Error('Base64 tidak valid');
         }
         
-        // Kirim request ke Flask API
-        const response = await axios.post(FLASK_API_URL, {
+        // Kirim request ke Flask API dengan endpoint baru untuk base64
+        const response = await axios.post(`${FLASK_API_URL}/predict-base64`, {
           image_data: base64Data
         }, {
           headers: {
@@ -413,7 +413,7 @@ const getPredictionFromFlaskApi = async (file, imageData) => {
       formData.append('file', fs.createReadStream(file.path));
       
       // Kirim request ke Flask API
-      const response = await axios.post(FLASK_API_URL, formData, {
+      const response = await axios.post(`${FLASK_API_URL}/predict`, formData, {
         headers: {
           ...formData.getHeaders()
         },
@@ -460,6 +460,7 @@ export const processRetinaImage = async (req, res) => {
     // Kirim gambar ke Flask API untuk analisis
     let predictionResult;
     let useSimulation = false;
+    let errorMessage = null;
 
     try {
       console.log('Mencoba mendapatkan prediksi dari Flask API...');
@@ -474,6 +475,21 @@ export const processRetinaImage = async (req, res) => {
       console.log('Hasil prediksi:', predictionResult);
     } catch (flaskError) {
       console.error('Error saat menghubungi Flask API, beralih ke mode simulasi:', flaskError);
+      errorMessage = flaskError.message || 'Error tidak diketahui';
+      
+      // Cek apakah ini error 422 (Unprocessable Entity) yang berarti format base64 tidak valid
+      if (flaskError.response && flaskError.response.status === 422) {
+        errorMessage = 'Format gambar tidak valid. Pastikan gambar dalam format yang didukung (JPEG/PNG).';
+      }
+      // Cek apakah ini error timeout
+      else if (flaskError.code === 'ECONNABORTED') {
+        errorMessage = 'Koneksi ke Flask API timeout. Server mungkin sedang sibuk atau tidak tersedia.';
+      }
+      // Cek apakah ini error koneksi
+      else if (flaskError.code === 'ECONNREFUSED') {
+        errorMessage = 'Tidak dapat terhubung ke Flask API. Server mungkin sedang down atau tidak tersedia.';
+      }
+      
       useSimulation = true;
       predictionResult = simulatePrediction(req.file ? req.file.filename : 'unknown');
       console.log('Hasil simulasi:', predictionResult);
@@ -564,7 +580,8 @@ export const processRetinaImage = async (req, res) => {
         confidence: predictionResult.confidence,
         severity: severity, // Tambahkan severity langsung di level results
         severityLevel: severityLevel, // Tambahkan severityLevel langsung di level results
-        isSimulation: useSimulation || predictionResult.isSimulation
+        isSimulation: useSimulation || predictionResult.isSimulation,
+        errorMessage: errorMessage // Simpan pesan error jika ada
       },
       recommendation,
       notes: req.body.notes || recommendation
