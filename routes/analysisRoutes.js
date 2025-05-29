@@ -675,6 +675,26 @@ router.get('/dashboard/stats', authMiddleware, async (req, res) => {
       lowest: Math.round(lowestConfidence)
     };
     
+    // Siapkan data analisis untuk chart Analisis Tingkat Kepercayaan AI
+    const analysesForChart = analyses.map(analysis => {
+      // Pastikan data analisis memiliki format yang benar
+      return {
+        id: analysis._id || analysis.id,
+        createdAt: analysis.createdAt,
+        timestamp: analysis.timestamp || analysis.createdAt,
+        results: {
+          confidence: analysis.results.confidence,
+          classification: analysis.results.classification
+        },
+        patientId: analysis.patientId ? {
+          id: analysis.patientId._id || analysis.patientId.id,
+          name: analysis.patientId.fullName || analysis.patientId.name,
+          age: analysis.patientId.age,
+          gender: analysis.patientId.gender
+        } : null
+      };
+    });
+    
     // Mengirim data dashboard
     res.json({
       severityDistribution,
@@ -694,7 +714,9 @@ router.get('/dashboard/stats', authMiddleware, async (req, res) => {
         age: a.patientId.age,
         gender: a.patientId.gender,
         severity: severityMapping[a.results.classification] || a.results.classification
-      }))
+      })),
+      // Tambahkan data analisis untuk chart Analisis Tingkat Kepercayaan AI
+      analyses: analysesForChart
     });
   } catch (error) {
     console.error('Error mendapatkan data dashboard:', error);
