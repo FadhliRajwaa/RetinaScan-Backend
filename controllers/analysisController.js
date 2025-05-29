@@ -503,104 +503,78 @@ export const processRetinaImage = async (req, res) => {
         recommendation = 'Lakukan pemeriksaan rutin setiap tahun.';
     }
 
-    // Buat data analisis
-    const analysisData = {
+    // Simpan data file
+    const fileData = req.file ? {
+      originalname: req.file.originalname,
+      mimetype: req.file.mimetype,
+      filename: req.file.filename,
+      path: req.file.path,
+      size: req.file.size
+    } : {
+      originalname: 'uploaded-image.jpg',
+      mimetype: 'image/jpeg',
+      filename: `${analysisId}.jpg`,
+      path: `uploads/${analysisId}.jpg`,
+      size: 0
+    };
+
+    // Simpan hasil analisis ke database
+    const RetinaAnalysis = req.app.get('models').RetinaAnalysis;
+    
+    // Cek apakah ada analisis sebelumnya untuk pasien ini
+    console.log(`Memeriksa analisis sebelumnya untuk pasien dengan ID: ${req.body.patientId}`);
+    
+    // Buat analisis baru
+    const newAnalysis = new RetinaAnalysis({
       analysisId,
       doctorId: req.user.id,
       patientId: req.body.patientId,
       timestamp,
-      imageDetails: req.file ? {
-        originalname: req.file.originalname,
-        mimetype: req.file.mimetype,
-        filename: req.file.filename,
-        path: req.file.path,
-        size: req.file.size
-      } : {
-        originalname: 'uploaded-image.jpg',
-        mimetype: 'image/jpeg',
-        filename: `uploaded-${Date.now()}.jpg`,
-        path: 'uploads/',
-        size: 0
-      },
+      imageDetails: fileData,
+      imageData: req.body.imageData || null, // Simpan base64 image jika tersedia
       results: {
         classification: predictionResult.class,
         confidence: predictionResult.confidence,
         isSimulation: useSimulation || predictionResult.isSimulation
       },
       recommendation,
-      notes: recommendation // Menyimpan rekomendasi sebagai catatan juga
-    };
+      notes: req.body.notes || recommendation
+    });
 
-    // Cek apakah perlu menyimpan imageData dalam format base64
-    const saveAsBase64 = req.body.saveAsBase64 === 'true';
-
-    if (saveAsBase64) {
-      // Gunakan imageData dari request jika tersedia
-      if (req.body.imageData && req.body.imageData.startsWith('data:')) {
-        console.log('Menggunakan imageData yang diberikan dari frontend');
-        analysisData.imageData = req.body.imageData;
-      } else if (req.file) {
-        // Jika tidak ada imageData dari request, buat dari file yang diupload
-        try {
-          console.log('Mengkonversi gambar ke base64 untuk disimpan di database');
-          const filePath = path.join(process.cwd(), req.file.path);
-          const fileData = fs.readFileSync(filePath);
-          const base64Image = `data:${req.file.mimetype};base64,${fileData.toString('base64')}`;
-          analysisData.imageData = base64Image;
-        } catch (error) {
-          console.error('Error saat mengkonversi gambar ke base64:', error);
-          // Lanjutkan tanpa imageData jika gagal
-        }
-      }
-    }
-    
-    // Buat dokumen analisis baru
-    const RetinaAnalysis = req.app.get('models').RetinaAnalysis;
-    const newAnalysis = new RetinaAnalysis(analysisData);
-    
     // Simpan analisis ke database
     const savedAnalysis = await newAnalysis.save();
-    console.log('Analisis berhasil disimpan dengan ID:', savedAnalysis._id);
-    
-    // Kirim notifikasi melalui Socket.IO jika tersedia
-    const io = req.app.get('io');
-    if (io) {
-      io.emit('new-analysis', {
-        id: savedAnalysis._id,
-        timestamp,
-        classification: predictionResult.class,
-        severity: severity,
-        severityLevel: severityLevel,
-        patientId: req.body.patientId,
-        doctorId: req.user.id
-      });
+    console.log('Analisis berhasil disimpan ke database dengan ID:', savedAnalysis._id);
+
+    // Persiapkan URL gambar untuk respons
+    let imageUrl;
+    if (req.file) {
+      imageUrl = `/uploads/${req.file.filename}`;
+    } else if (req.body.imageData) {
+      imageUrl = req.body.imageData; // Gunakan base64 langsung
     }
-    
-    // Kirim respons
+
+    // Kirim respons ke klien
     res.status(201).json({
-      message: 'Analisis retina berhasil',
+      message: 'Analisis berhasil',
       analysis: {
         id: savedAnalysis._id,
-        _id: savedAnalysis._id, // Tambahkan _id juga untuk kompatibilitas frontend
-        analysisId,
-        patientId: req.body.patientId,
-        timestamp,
-        imageUrl: req.file ? `/uploads/${req.file.filename}` : null,
-        imageData: analysisData.imageData, // Tambahkan imageData ke respons jika ada
-        results: {
-          classification: predictionResult.class, // Nilai asli dalam bahasa Inggris
-          severity: severity, // Nilai yang sudah diterjemahkan ke Indonesia
-          severityLevel: severityLevel, // Level keparahan (0-4)
-          confidence: predictionResult.confidence,
-          isSimulation: predictionResult.isSimulation || useSimulation
-        },
+        analysisId: savedAnalysis.analysisId,
+        patientId: savedAnalysis.patientId,
+        patientName: patient.fullName || patient.name,
+        severity,
+        severityLevel,
+        confidence: predictionResult.confidence,
         recommendation,
-        notes: recommendation // Tambahkan notes juga
+        notes: savedAnalysis.notes,
+        imageUrl,
+        timestamp: savedAnalysis.timestamp,
+        createdAt: savedAnalysis.createdAt,
+        isSimulation: useSimulation || predictionResult.isSimulation
       }
     });
   } catch (error) {
     console.error('Error saat memproses gambar retina:', error);
-    res.status(500).json({ message: 'Terjadi kesalahan saat memproses gambar', error: error.message });
+    res.status(500).json({ message: 'Gagal memproses gambar', error: error.message });
   }
 };
 

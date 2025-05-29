@@ -200,6 +200,101 @@ router.get('/history', authMiddleware, async (req, res) => {
     res.status(500).json({ message: 'Gagal mengambil riwayat analisis', error: error.message });
   }
 });
+
+// Endpoint baru untuk mengambil riwayat analisis berdasarkan ID pasien
+router.get('/history/patient/:patientId', authMiddleware, async (req, res) => {
+  try {
+    const { patientId } = req.params;
+    
+    // Validasi patientId
+    if (!patientId) {
+      return res.status(400).json({ message: 'Patient ID diperlukan' });
+    }
+    
+    const RetinaAnalysis = req.app.get('models').RetinaAnalysis;
+    const Patient = req.app.get('models').Patient;
+    
+    // Cek apakah pasien ada
+    const patient = await Patient.findById(patientId);
+    if (!patient) {
+      return res.status(404).json({ message: 'Pasien tidak ditemukan' });
+    }
+    
+    // Ambil semua analisis untuk pasien ini
+    const analyses = await RetinaAnalysis.find({
+      doctorId: req.user.id,
+      patientId: patientId
+    }).sort({ createdAt: -1 });
+    
+    // Mapping dari kelas bahasa Inggris ke Indonesia
+    const severityMapping = {
+      'No DR': 'Tidak ada',
+      'Mild': 'Ringan',
+      'Moderate': 'Sedang',
+      'Severe': 'Berat',
+      'Proliferative DR': 'Sangat Berat'
+    };
+    
+    // Mapping untuk severityLevel
+    const severityLevelMapping = {
+      'Tidak ada': 0,
+      'No DR': 0,
+      'Ringan': 1,
+      'Mild': 1,
+      'Sedang': 2,
+      'Moderate': 2,
+      'Berat': 3,
+      'Severe': 3,
+      'Sangat Berat': 4,
+      'Proliferative DR': 4
+    };
+    
+    // Map hasil untuk format yang konsisten dengan frontend
+    const mappedAnalyses = analyses.map(analysis => {
+      // Tentukan severity dalam bahasa Indonesia
+      const classification = analysis.results.classification;
+      const severity = severityMapping[classification] || classification;
+      
+      // Tentukan severityLevel berdasarkan severity
+      const severityLevel = severityLevelMapping[classification] || 
+                            severityLevelMapping[severity] || 0;
+      
+      return {
+        id: analysis._id,
+        patientId: patientId,
+        patientName: patient.fullName || patient.name,
+        imageUrl: `/uploads/${analysis.imageDetails.filename}`,
+        imageData: analysis.imageData,
+        createdAt: analysis.createdAt,
+        severity: severity,
+        originalSeverity: classification,
+        severityLevel: severityLevel,
+        confidence: analysis.results.confidence,
+        recommendation: analysis.recommendation,
+        notes: analysis.notes || analysis.recommendation,
+        isSimulation: analysis.results.isSimulation || false
+      };
+    });
+    
+    // Kirim respons dengan data pasien dan riwayat analisisnya
+    res.json({
+      patient: {
+        id: patient._id,
+        name: patient.name,
+        fullName: patient.fullName,
+        gender: patient.gender,
+        age: patient.age,
+        dateOfBirth: patient.dateOfBirth
+      },
+      analyses: mappedAnalyses,
+      totalAnalyses: mappedAnalyses.length
+    });
+  } catch (error) {
+    console.error('Error saat mengambil riwayat analisis pasien:', error);
+    res.status(500).json({ message: 'Gagal mengambil riwayat analisis pasien', error: error.message });
+  }
+});
+
 router.get('/report', authMiddleware, async (req, res) => {
   try {
     const RetinaAnalysis = req.app.get('models').RetinaAnalysis;
