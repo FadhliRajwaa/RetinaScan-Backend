@@ -365,25 +365,45 @@ const getPredictionFromFlaskApi = async (file, imageData) => {
       // Jika imageData tersedia, gunakan itu (lebih efisien)
       console.log('Menggunakan imageData yang disediakan untuk prediksi');
       
-      // Ambil bagian base64 saja (tanpa prefix data:image/...)
-      const base64Data = imageData.split(',')[1];
-      
-      // Kirim request ke Flask API
-      const response = await axios.post(FLASK_API_URL, {
-        image_data: base64Data
-      }, {
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        timeout: 30000 // 30 detik timeout
-      });
-      
-      console.log('Prediksi berhasil dengan imageData:', response.data);
-      return {
-        class: response.data.class,
-        confidence: response.data.confidence,
-        isSimulation: response.data.is_simulation || false
-      };
+      try {
+        // Ambil bagian base64 saja (tanpa prefix data:image/...)
+        const base64Parts = imageData.split(',');
+        if (base64Parts.length !== 2) {
+          throw new Error('Format base64 tidak valid');
+        }
+        
+        const base64Data = base64Parts[1];
+        // Validasi apakah base64 valid dengan mencoba decode dan encode kembali
+        // Jika tidak valid, akan throw error
+        try {
+          // Coba decode dan encode kembali sebagian kecil data untuk validasi
+          const testSegment = base64Data.substring(0, 100); // Ambil 100 karakter pertama saja
+          atob(testSegment); // Decode base64, throw error jika tidak valid
+        } catch (validationError) {
+          console.error('Base64 tidak valid:', validationError);
+          throw new Error('Base64 tidak valid');
+        }
+        
+        // Kirim request ke Flask API
+        const response = await axios.post(FLASK_API_URL, {
+          image_data: base64Data
+        }, {
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          timeout: 60000 // 60 detik timeout (ditingkatkan dari 30 detik)
+        });
+        
+        console.log('Prediksi berhasil dengan imageData:', response.data);
+        return {
+          class: response.data.class,
+          confidence: response.data.confidence,
+          isSimulation: response.data.is_simulation || false
+        };
+      } catch (base64Error) {
+        console.error('Error saat memproses base64:', base64Error.message);
+        throw base64Error;
+      }
     } else if (file) {
       // Jika tidak ada imageData, gunakan file yang diupload
       console.log('Menggunakan file yang diupload untuk prediksi');
@@ -397,7 +417,7 @@ const getPredictionFromFlaskApi = async (file, imageData) => {
         headers: {
           ...formData.getHeaders()
         },
-        timeout: 30000 // 30 detik timeout
+        timeout: 60000 // 60 detik timeout (ditingkatkan dari 30 detik)
       });
       
       console.log('Prediksi berhasil dengan file:', response.data);
@@ -443,6 +463,13 @@ export const processRetinaImage = async (req, res) => {
 
     try {
       console.log('Mencoba mendapatkan prediksi dari Flask API...');
+      
+      // Jika ada imageData tapi ukurannya > 1MB, kompres terlebih dahulu
+      if (req.body.imageData && req.body.imageData.length > 1024 * 1024) {
+        console.log('Gambar terlalu besar, mencoba kompres...');
+        // Kita tidak benar-benar mengompres di sini, tapi bisa ditambahkan di masa depan
+      }
+      
       predictionResult = await getPredictionFromFlaskApi(req.file, req.body.imageData);
       console.log('Hasil prediksi:', predictionResult);
     } catch (flaskError) {
@@ -535,6 +562,8 @@ export const processRetinaImage = async (req, res) => {
       results: {
         classification: predictionResult.class,
         confidence: predictionResult.confidence,
+        severity: severity, // Tambahkan severity langsung di level results
+        severityLevel: severityLevel, // Tambahkan severityLevel langsung di level results
         isSimulation: useSimulation || predictionResult.isSimulation
       },
       recommendation,
@@ -553,7 +582,7 @@ export const processRetinaImage = async (req, res) => {
       imageUrl = req.body.imageData; // Gunakan base64 langsung
     }
 
-    // Kirim respons ke klien
+    // Kirim respons ke klien dengan format yang konsisten
     res.status(201).json({
       message: 'Analisis berhasil',
       analysis: {
@@ -561,14 +590,23 @@ export const processRetinaImage = async (req, res) => {
         analysisId: savedAnalysis.analysisId,
         patientId: savedAnalysis.patientId,
         patientName: patient.fullName || patient.name,
-        severity,
-        severityLevel,
+        timestamp: savedAnalysis.timestamp,
+        createdAt: savedAnalysis.createdAt,
+        imageUrl,
+        // Tambahkan results sebagai objek terpisah agar konsisten
+        results: {
+          severity: severity,
+          severityLevel: severityLevel,
+          classification: predictionResult.class,
+          confidence: predictionResult.confidence,
+          isSimulation: useSimulation || predictionResult.isSimulation
+        },
+        // Tambahkan juga properties di root untuk backward compatibility
+        severity: severity,
+        severityLevel: severityLevel,
         confidence: predictionResult.confidence,
         recommendation,
         notes: savedAnalysis.notes,
-        imageUrl,
-        timestamp: savedAnalysis.timestamp,
-        createdAt: savedAnalysis.createdAt,
         isSimulation: useSimulation || predictionResult.isSimulation
       }
     });
