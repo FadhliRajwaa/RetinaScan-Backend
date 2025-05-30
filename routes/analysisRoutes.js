@@ -140,7 +140,7 @@ router.get('/history', authMiddleware, async (req, res) => {
     })
     .populate({
       path: 'patientId',
-      select: 'name fullName gender age'
+      select: 'name fullName gender age' 
     })
     .sort({ createdAt: -1 });
     
@@ -167,6 +167,20 @@ router.get('/history', authMiddleware, async (req, res) => {
       'Proliferative DR': 4
     };
     
+    // Fungsi normalisasi gender
+    const normalizeGender = (gender) => {
+      if (!gender) return null;
+      
+      const genderLower = gender.toLowerCase().trim();
+      if (genderLower === 'laki-laki' || genderLower === 'male' || genderLower === 'l' || genderLower === 'm') {
+        return 'Laki-laki';
+      } else if (genderLower === 'perempuan' || genderLower === 'female' || genderLower === 'p' || genderLower === 'f') {
+        return 'Perempuan';
+      }
+      
+      return gender;
+    };
+    
     // Map hasil untuk format yang konsisten dengan frontend
     const mappedAnalyses = analyses.map(analysis => {
       // Tentukan severity dalam bahasa Indonesia
@@ -177,10 +191,33 @@ router.get('/history', authMiddleware, async (req, res) => {
       const severityLevel = severityLevelMapping[classification] || 
                             severityLevelMapping[severity] || 0;
       
+      // Dapatkan informasi pasien dengan normalisasi
+      let patientData = null;
+      
+      if (analysis.patientId) {
+        patientData = {
+          _id: analysis.patientId._id,
+          name: analysis.patientId.name,
+          fullName: analysis.patientId.fullName || analysis.patientId.name,
+          gender: normalizeGender(analysis.patientId.gender),
+          age: analysis.patientId.age
+        };
+        
+        // Log untuk debugging
+        console.log('Patient data in analysis mapping:', {
+          id: patientData._id,
+          gender: {
+            original: analysis.patientId.gender,
+            normalized: patientData.gender
+          },
+          age: patientData.age
+        });
+      }
+      
       return {
         id: analysis._id,
-        patientId: analysis.patientId ? analysis.patientId._id : null,
-        patientName: analysis.patientId ? analysis.patientId.fullName || analysis.patientId.name : 'Unknown',
+        patientId: patientData,
+        patientName: patientData ? patientData.fullName : 'Unknown',
         imageUrl: `/uploads/${analysis.imageDetails.filename}`,
         imageData: analysis.imageData,
         createdAt: analysis.createdAt,
@@ -249,6 +286,40 @@ router.get('/history/patient/:patientId', authMiddleware, async (req, res) => {
       'Proliferative DR': 4
     };
     
+    // Fungsi normalisasi gender
+    const normalizeGender = (gender) => {
+      if (!gender) return null;
+      
+      const genderLower = gender.toLowerCase().trim();
+      if (genderLower === 'laki-laki' || genderLower === 'male' || genderLower === 'l' || genderLower === 'm') {
+        return 'Laki-laki';
+      } else if (genderLower === 'perempuan' || genderLower === 'female' || genderLower === 'p' || genderLower === 'f') {
+        return 'Perempuan';
+      }
+      
+      return gender;
+    };
+    
+    // Normalisasi data pasien
+    const normalizedPatient = {
+      id: patient._id,
+      name: patient.name,
+      fullName: patient.fullName || patient.name,
+      gender: normalizeGender(patient.gender),
+      age: patient.age,
+      dateOfBirth: patient.dateOfBirth
+    };
+    
+    // Log untuk debugging
+    console.log('Normalized patient data:', {
+      id: normalizedPatient.id,
+      gender: {
+        original: patient.gender,
+        normalized: normalizedPatient.gender
+      },
+      age: normalizedPatient.age
+    });
+    
     // Map hasil untuk format yang konsisten dengan frontend
     const mappedAnalyses = analyses.map(analysis => {
       // Tentukan severity dalam bahasa Indonesia
@@ -261,8 +332,8 @@ router.get('/history/patient/:patientId', authMiddleware, async (req, res) => {
       
       return {
         id: analysis._id,
-        patientId: patientId,
-        patientName: patient.fullName || patient.name,
+        patientId: normalizedPatient,
+        patientName: normalizedPatient.fullName,
         imageUrl: `/uploads/${analysis.imageDetails.filename}`,
         imageData: analysis.imageData,
         createdAt: analysis.createdAt,
@@ -278,14 +349,7 @@ router.get('/history/patient/:patientId', authMiddleware, async (req, res) => {
     
     // Kirim respons dengan data pasien dan riwayat analisisnya
     res.json({
-      patient: {
-        id: patient._id,
-        name: patient.name,
-        fullName: patient.fullName,
-        gender: patient.gender,
-        age: patient.age,
-        dateOfBirth: patient.dateOfBirth
-      },
+      patient: normalizedPatient,
       analyses: mappedAnalyses,
       totalAnalyses: mappedAnalyses.length
     });
