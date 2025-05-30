@@ -274,7 +274,7 @@ app.get('/api/health', (req, res) => {
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/analysis', analysisRoutes);
-app.use('/api/users', userRoutes);
+app.use('/api/user', userRoutes);
 app.use('/api/patients', patientRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/email', emailRoutes); // Tambahkan route email
