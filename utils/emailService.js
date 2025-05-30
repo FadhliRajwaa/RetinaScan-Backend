@@ -1,5 +1,5 @@
 import dotenv from 'dotenv';
-import axios from 'axios';
+import emailjs from '@emailjs/nodejs';
 
 // Konfigurasi environment variables
 dotenv.config();
@@ -8,12 +8,10 @@ dotenv.config();
 const SERVICE_ID = process.env.EMAILJS_SERVICE_ID || 'Email_Fadhli_ID';
 const TEMPLATE_ID_RESET = process.env.EMAILJS_RESET_TEMPLATE_ID || 'template_j9rj1wu';
 const PUBLIC_KEY = process.env.EMAILJS_PUBLIC_KEY || '';
-
-// URL untuk EmailJS API
-const EMAILJS_API_URL = 'https://api.emailjs.com/api/v1.0/email/send';
+const PRIVATE_KEY = process.env.EMAILJS_PRIVATE_KEY || '';
 
 /**
- * Inisialisasi EmailJS (hanya untuk logging)
+ * Inisialisasi EmailJS
  */
 export const initEmailJS = () => {
   try {
@@ -21,6 +19,14 @@ export const initEmailJS = () => {
     console.log('- Service ID:', SERVICE_ID);
     console.log('- Template Reset ID:', TEMPLATE_ID_RESET);
     console.log('- Public Key:', PUBLIC_KEY ? 'Terisi' : 'Tidak terisi');
+    console.log('- Private Key:', PRIVATE_KEY ? 'Terisi' : 'Tidak terisi');
+    
+    // Inisialisasi SDK EmailJS
+    emailjs.init({
+      publicKey: PUBLIC_KEY,
+      privateKey: PRIVATE_KEY, // Kunci private diperlukan untuk server-side
+    });
+    
     console.log('EmailJS berhasil diinisialisasi');
     return true;
   } catch (error) {
@@ -30,7 +36,7 @@ export const initEmailJS = () => {
 };
 
 /**
- * Mengirim email reset password menggunakan REST API EmailJS
+ * Mengirim email reset password menggunakan EmailJS SDK for Node.js
  * @param {Object} data - Data untuk email reset password
  * @param {string} data.to_email - Email penerima
  * @param {string} data.to_name - Nama penerima
@@ -63,48 +69,38 @@ export const sendResetPasswordEmail = async (data) => {
     console.log('Mempersiapkan pengiriman email reset password ke:', data.to_email);
     console.log('Parameter template:', JSON.stringify(templateParams, null, 2));
     
-    // Siapkan data request untuk EmailJS API
-    const requestData = {
-      service_id: SERVICE_ID,
-      template_id: TEMPLATE_ID_RESET,
-      user_id: PUBLIC_KEY,
-      template_params: templateParams
-    };
-    
-    console.log('Mengirim request ke EmailJS API:', EMAILJS_API_URL);
-    
-    // Panggil REST API EmailJS
-    const response = await axios.post(EMAILJS_API_URL, requestData, {
-      headers: {
-        'Content-Type': 'application/json'
+    // Gunakan SDK EmailJS untuk mengirim email
+    const response = await emailjs.send(
+      SERVICE_ID, 
+      TEMPLATE_ID_RESET, 
+      templateParams, 
+      {
+        publicKey: PUBLIC_KEY,
+        privateKey: PRIVATE_KEY, // Kunci private diperlukan untuk server-side
       }
-    });
-
-    console.log('Email reset password berhasil dikirim:', response.status, response.statusText);
+    );
+    
+    console.log('Email reset password berhasil dikirim:', response.status, response.text);
     return {
       success: true,
       message: 'Email reset password berhasil dikirim',
-      response: response.data,
+      response: response,
     };
   } catch (error) {
     console.error('Error mengirim reset password email:', error.message);
-    if (error.response) {
-      console.error('Error status:', error.response.status);
-      console.error('Error data:', error.response.data);
-    }
     
+    // Menangani error EmailJS
     let errorMessage = 'Gagal mengirim email reset password';
     
-    if (error.response) {
-      if (error.response.status === 400) {
-        errorMessage += ': Parameter tidak valid';
-      } else if (error.response.status === 401 || error.response.status === 403) {
-        errorMessage += ': Masalah autentikasi dengan layanan email';
-      } else if (error.response.status === 422) {
-        errorMessage += ': ' + (error.response.data?.error || 'Parameter tidak lengkap');
-      } else if (error.response.status >= 500) {
-        errorMessage += ': Layanan email sedang mengalami masalah';
-      }
+    if (error.status === 400) {
+      errorMessage += ': Parameter tidak valid';
+    } else if (error.status === 401 || error.status === 403) {
+      errorMessage += ': Masalah autentikasi dengan layanan email';
+      console.error('CATATAN: Pastikan opsi "Allow EmailJS API for non-browser applications" sudah diaktifkan di dashboard EmailJS (Account -> Security)');
+    } else if (error.status === 422) {
+      errorMessage += ': Parameter tidak lengkap';
+    } else if (error.status >= 500) {
+      errorMessage += ': Layanan email sedang mengalami masalah';
     }
     
     return {

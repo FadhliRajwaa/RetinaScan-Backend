@@ -18,10 +18,6 @@ const patientSchema = new mongoose.Schema({
       // Normalisasi gender ke format standar bahasa Indonesia
       if (!gender) return '';
       
-      // Tambahkan penanganan eksak untuk 'male' dan 'female' sebelum lowercase
-      if (gender === 'male') return 'Laki-laki';
-      if (gender === 'female') return 'Perempuan';
-      
       const genderLower = gender.toLowerCase().trim();
       if (genderLower === 'laki-laki' || genderLower === 'male' || genderLower === 'l' || genderLower === 'm') {
         return 'Laki-laki';
