@@ -96,7 +96,8 @@ export const updatePatient = async (req, res, next) => {
     patient.fullName = fullName || patient.fullName;
     patient.dateOfBirth = dateOfBirth || patient.dateOfBirth;
     patient.age = age || patient.age;
-    patient.gender = gender || patient.gender;
+    // Pastikan gender selalu diteruskan, bahkan jika nilainya adalah string kosong
+    patient.gender = gender !== undefined ? gender : patient.gender;
     patient.phone = phone || patient.phone;
     patient.address = address || patient.address;
     patient.bloodType = bloodType || patient.bloodType;
