@@ -41,8 +41,13 @@ export const sendResetPasswordEmailHandler = async (req, res) => {
       });
     }
     
+    // Gunakan domain render dalam produksi
+    const frontendUrl = process.env.NODE_ENV === 'production' 
+      ? 'https://retinascan.onrender.com' 
+      : process.env.FRONTEND_URL || 'http://localhost:5173';
+      
     // Siapkan data untuk email
-    const resetLink = createResetPasswordLink(resetCode);
+    const resetLink = createResetPasswordLink(resetCode, frontendUrl);
     
     // Kirim email dengan parameter yang sesuai dengan template EmailJS
     const result = await sendResetPasswordEmail({

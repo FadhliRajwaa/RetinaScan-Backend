@@ -1,5 +1,5 @@
-import emailjs from '@emailjs/browser';
 import dotenv from 'dotenv';
+import axios from 'axios';
 
 // Konfigurasi environment variables
 dotenv.config();
@@ -9,41 +9,28 @@ const SERVICE_ID = process.env.EMAILJS_SERVICE_ID || 'Email_Fadhli_ID';
 const TEMPLATE_ID_RESET = process.env.EMAILJS_RESET_TEMPLATE_ID || 'template_j9rj1wu';
 const PUBLIC_KEY = process.env.EMAILJS_PUBLIC_KEY || '';
 
-let isInitialized = false;
+// URL untuk EmailJS API
+const EMAILJS_API_URL = 'https://api.emailjs.com/api/v1.0/email/send';
 
 /**
- * Inisialisasi EmailJS
+ * Inisialisasi EmailJS (hanya untuk logging)
  */
 export const initEmailJS = () => {
-  if (isInitialized) {
-    console.log('EmailJS sudah diinisialisasi sebelumnya');
-    return;
-  }
-  
   try {
     console.log('Menginisialisasi EmailJS dengan konfigurasi:');
     console.log('- Service ID:', SERVICE_ID);
     console.log('- Template Reset ID:', TEMPLATE_ID_RESET);
     console.log('- Public Key:', PUBLIC_KEY ? 'Terisi' : 'Tidak terisi');
-    
-    emailjs.init({
-      publicKey: PUBLIC_KEY,
-      blockHeadless: false,
-      limitRate: {
-        throttle: 3000,
-      },
-    });
-    
-    isInitialized = true;
     console.log('EmailJS berhasil diinisialisasi');
+    return true;
   } catch (error) {
     console.error('Gagal menginisialisasi EmailJS:', error);
-    throw new Error('Gagal menginisialisasi EmailJS: ' + error.message);
+    return false;
   }
 };
 
 /**
- * Mengirim email reset password
+ * Mengirim email reset password menggunakan REST API EmailJS
  * @param {Object} data - Data untuk email reset password
  * @param {string} data.to_email - Email penerima
  * @param {string} data.to_name - Nama penerima
@@ -52,19 +39,6 @@ export const initEmailJS = () => {
  * @returns {Promise} - Promise hasil pengiriman email
  */
 export const sendResetPasswordEmail = async (data) => {
-  if (!isInitialized) {
-    try {
-      initEmailJS();
-    } catch (error) {
-      console.error('EmailJS tidak dapat diinisialisasi:', error);
-      return {
-        success: false,
-        message: 'Sistem email tidak dapat diinisialisasi',
-        error,
-      };
-    }
-  }
-  
   // Validasi parameter
   if (!data.to_email) {
     console.error('Email penerima tidak diberikan');
@@ -89,33 +63,48 @@ export const sendResetPasswordEmail = async (data) => {
     console.log('Mempersiapkan pengiriman email reset password ke:', data.to_email);
     console.log('Parameter template:', JSON.stringify(templateParams, null, 2));
     
-    const response = await emailjs.send(
-      SERVICE_ID,
-      TEMPLATE_ID_RESET,
-      templateParams
-    );
+    // Siapkan data request untuk EmailJS API
+    const requestData = {
+      service_id: SERVICE_ID,
+      template_id: TEMPLATE_ID_RESET,
+      user_id: PUBLIC_KEY,
+      template_params: templateParams
+    };
+    
+    console.log('Mengirim request ke EmailJS API:', EMAILJS_API_URL);
+    
+    // Panggil REST API EmailJS
+    const response = await axios.post(EMAILJS_API_URL, requestData, {
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
 
-    console.log('Email reset password berhasil dikirim:', response);
+    console.log('Email reset password berhasil dikirim:', response.status, response.statusText);
     return {
       success: true,
       message: 'Email reset password berhasil dikirim',
-      response,
+      response: response.data,
     };
   } catch (error) {
-    console.error('Error mengirim reset password email:', error);
-    console.error('Error status:', error.status);
-    console.error('Error text:', error.text);
+    console.error('Error mengirim reset password email:', error.message);
+    if (error.response) {
+      console.error('Error status:', error.response.status);
+      console.error('Error data:', error.response.data);
+    }
     
     let errorMessage = 'Gagal mengirim email reset password';
     
-    if (error.status === 400) {
-      errorMessage += ': Parameter tidak valid';
-    } else if (error.status === 401 || error.status === 403) {
-      errorMessage += ': Masalah autentikasi dengan layanan email';
-    } else if (error.status === 422) {
-      errorMessage += ': ' + (error.text || 'Parameter tidak lengkap');
-    } else if (error.status >= 500) {
-      errorMessage += ': Layanan email sedang mengalami masalah';
+    if (error.response) {
+      if (error.response.status === 400) {
+        errorMessage += ': Parameter tidak valid';
+      } else if (error.response.status === 401 || error.response.status === 403) {
+        errorMessage += ': Masalah autentikasi dengan layanan email';
+      } else if (error.response.status === 422) {
+        errorMessage += ': ' + (error.response.data?.error || 'Parameter tidak lengkap');
+      } else if (error.response.status >= 500) {
+        errorMessage += ': Layanan email sedang mengalami masalah';
+      }
     }
     
     return {
@@ -132,7 +121,7 @@ export const sendResetPasswordEmail = async (data) => {
  * @param {string} baseUrl - Base URL aplikasi frontend
  * @returns {string} - Link reset password lengkap
  */
-export const createResetPasswordLink = (token, baseUrl = process.env.FRONTEND_URL || 'http://localhost:5173') => {
+export const createResetPasswordLink = (token, baseUrl = process.env.FRONTEND_URL || 'https://retinascan.onrender.com') => {
   return `${baseUrl}/#/reset-password?code=${token}`;
 };
 

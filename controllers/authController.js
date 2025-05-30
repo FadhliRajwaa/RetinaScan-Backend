@@ -134,7 +134,12 @@ export const forgotPassword = async (req, res, next) => {
       
       // Coba kirim email dengan kode yang sudah ada
       try {
-        const resetLink = createResetPasswordLink(user.resetPasswordCode);
+        // Gunakan domain render dalam produksi
+        const frontendUrl = process.env.NODE_ENV === 'production' 
+          ? 'https://retinascan.onrender.com' 
+          : process.env.FRONTEND_URL || 'http://localhost:5173';
+          
+        const resetLink = createResetPasswordLink(user.resetPasswordCode, frontendUrl);
         
         // Kirim email reset password
         const emailResult = await sendResetPasswordEmail({
@@ -166,7 +171,12 @@ export const forgotPassword = async (req, res, next) => {
 
     // Kirim email reset password secara otomatis setelah kode reset dibuat
     try {
-      const resetLink = createResetPasswordLink(resetCode);
+      // Gunakan domain render dalam produksi
+      const frontendUrl = process.env.NODE_ENV === 'production' 
+        ? 'https://retinascan.onrender.com' 
+        : process.env.FRONTEND_URL || 'http://localhost:5173';
+        
+      const resetLink = createResetPasswordLink(resetCode, frontendUrl);
       
       // Kirim email reset password
       const emailResult = await sendResetPasswordEmail({
