@@ -55,18 +55,23 @@ export const sendResetPasswordEmail = async (data) => {
     };
   }
   
-  // Pastikan nama parameter sesuai dengan yang diharapkan oleh template EmailJS
-  const templateParams = {
-    to_email: data.to_email,
-    to_name: data.to_name || 'Pengguna',
-    reset_link: data.reset_link,
-    reset_token: data.reset_token,
-    app_name: 'RetinaScan',
-    // Pastikan semua parameter yang diperlukan template EmailJS tersedia
-  };
-  
   try {
     console.log('Mempersiapkan pengiriman email reset password ke:', data.to_email);
+    
+    // Pastikan semua parameter yang diperlukan tersedia dengan nilai default jika tidak ada
+    const templateParams = {
+      to_email: data.to_email,
+      to_name: data.to_name || 'Pengguna',
+      reset_link: data.reset_link || '',
+      reset_token: data.reset_token || '',
+      app_name: 'RetinaScan',
+      // Parameter tambahan yang mungkin diperlukan oleh template
+      reply_to: data.to_email,
+      from_name: 'RetinaScan',
+      subject: 'Reset Password RetinaScan',
+      message: `Gunakan link berikut untuk reset password Anda: ${data.reset_link}`,
+    };
+    
     console.log('Parameter template:', JSON.stringify(templateParams, null, 2));
     
     // Gunakan SDK EmailJS untuk mengirim email
@@ -88,6 +93,7 @@ export const sendResetPasswordEmail = async (data) => {
     };
   } catch (error) {
     console.error('Error mengirim reset password email:', error.message);
+    console.error('Detail error:', error);
     
     // Menangani error EmailJS
     let errorMessage = 'Gagal mengirim email reset password';
@@ -99,6 +105,7 @@ export const sendResetPasswordEmail = async (data) => {
       console.error('CATATAN: Pastikan opsi "Allow EmailJS API for non-browser applications" sudah diaktifkan di dashboard EmailJS (Account -> Security)');
     } else if (error.status === 422) {
       errorMessage += ': Parameter tidak lengkap';
+      console.error('CATATAN: Pastikan template EmailJS dikonfigurasi dengan benar dan semua variabel yang diperlukan telah disediakan');
     } else if (error.status >= 500) {
       errorMessage += ': Layanan email sedang mengalami masalah';
     }
@@ -118,6 +125,7 @@ export const sendResetPasswordEmail = async (data) => {
  * @returns {string} - Link reset password lengkap
  */
 export const createResetPasswordLink = (token, baseUrl = process.env.FRONTEND_URL || 'https://retinascan.onrender.com') => {
+  // Pastikan URL yang dibuat sesuai dengan route di React frontend
   return `${baseUrl}/#/reset-password?code=${token}`;
 };
 

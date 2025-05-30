@@ -52,9 +52,13 @@ export const sendResetPasswordEmailHandler = async (req, res) => {
     // Kirim email dengan parameter yang sesuai dengan template EmailJS
     const result = await sendResetPasswordEmail({
       to_email: email,
-      to_name: user.name || email.split('@')[0],
+      to_name: user.name || user.fullName || email.split('@')[0],
       reset_link: resetLink,
-      reset_token: resetCode
+      reset_token: resetCode,
+      subject: 'Reset Password RetinaScan',
+      from_name: 'RetinaScan',
+      reply_to: 'noreply@retinascan.com',
+      message: `Gunakan kode ${resetCode} atau klik link berikut untuk mengatur ulang password Anda: ${resetLink}`
     });
     
     if (result.success) {
@@ -78,7 +82,9 @@ export const sendResetPasswordEmailHandler = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: 'Terjadi kesalahan saat mengirim email reset password',
-      error: error.message
+      error: error.message,
+      fallback: true,
+      resetCode
     });
   }
 }; 

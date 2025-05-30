@@ -141,12 +141,16 @@ export const forgotPassword = async (req, res, next) => {
           
         const resetLink = createResetPasswordLink(user.resetPasswordCode, frontendUrl);
         
-        // Kirim email reset password
+        // Kirim email reset password dengan semua parameter yang diperlukan
         const emailResult = await sendResetPasswordEmail({
           to_email: email,
-          to_name: user.name || email.split('@')[0],
+          to_name: user.name || user.fullName || email.split('@')[0],
           reset_link: resetLink,
-          reset_token: user.resetPasswordCode
+          reset_token: user.resetPasswordCode,
+          subject: 'Reset Password RetinaScan',
+          from_name: 'RetinaScan',
+          reply_to: 'noreply@retinascan.com',
+          message: `Gunakan kode ${user.resetPasswordCode} atau klik link berikut untuk mengatur ulang password Anda: ${resetLink}`
         });
         
         if (emailResult.success) {
@@ -178,12 +182,16 @@ export const forgotPassword = async (req, res, next) => {
         
       const resetLink = createResetPasswordLink(resetCode, frontendUrl);
       
-      // Kirim email reset password
+      // Kirim email reset password dengan semua parameter yang diperlukan
       const emailResult = await sendResetPasswordEmail({
         to_email: email,
-        to_name: user.name || email.split('@')[0],
+        to_name: user.name || user.fullName || email.split('@')[0],
         reset_link: resetLink,
-        reset_token: resetCode
+        reset_token: resetCode,
+        subject: 'Reset Password RetinaScan',
+        from_name: 'RetinaScan',
+        reply_to: 'noreply@retinascan.com',
+        message: `Gunakan kode ${resetCode} atau klik link berikut untuk mengatur ulang password Anda: ${resetLink}`
       });
       
       if (emailResult.success) {
