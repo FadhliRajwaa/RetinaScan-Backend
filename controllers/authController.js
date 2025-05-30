@@ -1,6 +1,7 @@
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import User from '../models/User.js';
+import { sendResetPasswordEmail, createResetPasswordLink } from '../utils/emailService.js';
 
 export const verifyToken = async (req, res) => {
   // Jika request sampai di sini, berarti token valid karena sudah melewati authMiddleware
@@ -130,7 +131,29 @@ export const forgotPassword = async (req, res, next) => {
     // Cek apakah ada kode verifikasi yang masih valid
     if (user.resetPasswordCode && user.resetPasswordExpires > Date.now()) {
       console.log(`Existing reset code for ${email} is still valid: ${user.resetPasswordCode}`);
-      return res.json({ message: 'Kode verifikasi yang masih valid telah ditemukan.', resetCode: user.resetPasswordCode });
+      
+      // Coba kirim email dengan kode yang sudah ada
+      try {
+        const resetLink = createResetPasswordLink(user.resetPasswordCode);
+        
+        // Kirim email reset password
+        const emailResult = await sendResetPasswordEmail({
+          to_email: email,
+          to_name: user.name || email.split('@')[0],
+          reset_link: resetLink,
+          reset_token: user.resetPasswordCode
+        });
+        
+        if (emailResult.success) {
+          console.log(`Email reset password berhasil dikirim ke ${email}`);
+        } else {
+          console.error(`Gagal mengirim email reset password ke ${email}:`, emailResult.message);
+        }
+      } catch (emailError) {
+        console.error(`Error saat mengirim email reset password ke ${email}:`, emailError);
+      }
+      
+      return res.json({ message: 'Kode verifikasi yang masih valid telah ditemukan dan dikirim ke email Anda.', resetCode: user.resetPasswordCode });
     }
 
     // Generate kode verifikasi 6 digit
@@ -141,7 +164,28 @@ export const forgotPassword = async (req, res, next) => {
     await user.save();
     console.log(`Saved reset code for ${email}: ${user.resetPasswordCode}, expires at ${user.resetPasswordExpires}`);
 
-    res.json({ message: 'Kode verifikasi telah dibuat.', resetCode });
+    // Kirim email reset password secara otomatis setelah kode reset dibuat
+    try {
+      const resetLink = createResetPasswordLink(resetCode);
+      
+      // Kirim email reset password
+      const emailResult = await sendResetPasswordEmail({
+        to_email: email,
+        to_name: user.name || email.split('@')[0],
+        reset_link: resetLink,
+        reset_token: resetCode
+      });
+      
+      if (emailResult.success) {
+        console.log(`Email reset password berhasil dikirim ke ${email}`);
+      } else {
+        console.error(`Gagal mengirim email reset password ke ${email}:`, emailResult.message);
+      }
+    } catch (emailError) {
+      console.error(`Error saat mengirim email reset password ke ${email}:`, emailError);
+    }
+
+    res.json({ message: 'Kode verifikasi telah dibuat dan dikirim ke email Anda.', resetCode });
   } catch (error) {
     console.error('Gagal membuat kode verifikasi:', error.message);
     res.status(500).json({ message: 'Gagal membuat kode verifikasi. Silakan coba lagi nanti.' });
