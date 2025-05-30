@@ -75,10 +75,10 @@ export const sendResetPasswordEmailWithNodemailer = async (data) => {
     
     const transporter = createNodemailerTransporter();
     
-    // Tahun saat ini untuk copyright
+    // Dapatkan tahun saat ini secara dinamis
     const currentYear = new Date().getFullYear();
     
-    // Buat template HTML dengan desain yang lebih modern
+    // Buat template HTML modern dengan palet warna yang lebih menarik
     const htmlContent = `
       <!DOCTYPE html>
       <html lang="id">
@@ -87,72 +87,94 @@ export const sendResetPasswordEmailWithNodemailer = async (data) => {
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Reset Password RetinaScan</title>
       </head>
-      <body style="margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f7ff; color: #333;">
-        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+      <body style="margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f9fafb; color: #1f2937;">
+        <table role="presentation" cellspacing="0" cellpadding="0" border="0" align="center" width="100%" style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); margin-top: 40px; margin-bottom: 40px;">
+          <!-- Header -->
           <tr>
-            <td style="padding: 30px 0;">
-              <table align="center" width="600" cellspacing="0" cellpadding="0" border="0" style="max-width: 600px; background-color: #ffffff; border-radius: 16px; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1); overflow: hidden;">
-                <!-- Header -->
+            <td style="padding: 0;">
+              <table width="100%" style="border-spacing: 0; background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%); color: white; padding: 20px 0;">
                 <tr>
-                  <td style="background-image: linear-gradient(to right, #4F46E5, #7C3AED); padding: 30px 40px; text-align: center;">
-                    <h1 style="margin: 0; color: white; font-size: 28px; font-weight: 700; letter-spacing: 0.5px;">
-                      <img src="https://i.ibb.co/DMQdS5F/eye-icon.png" alt="RetinaScan" width="40" style="vertical-align: middle; margin-right: 10px;">
-                      RetinaScan
-                    </h1>
+                  <td align="center" style="padding: 0;">
+                    <img src="https://i.ibb.co/7KtHzrD/eye-scan.png" alt="RetinaScan Logo" width="60" style="display: block; margin: 0 auto 10px auto;">
+                    <h1 style="margin: 0; font-size: 28px; font-weight: 600;">RetinaScan</h1>
+                    <p style="margin: 5px 0 0 0; opacity: 0.9; font-size: 16px;">Pusat Deteksi Retinopati Diabetik</p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          
+          <!-- Content -->
+          <tr>
+            <td style="padding: 40px 30px 20px 30px;">
+              <table width="100%" style="border-spacing: 0;">
+                <tr>
+                  <td>
+                    <h2 style="margin: 0 0 25px 0; color: #4f46e5; font-size: 24px; text-align: center;">Reset Password</h2>
+                    <p style="margin: 0 0 15px 0; font-size: 16px; line-height: 1.5;">Halo <strong>${data.to_name || 'Pengguna'}</strong>,</p>
+                    <p style="margin: 0 0 25px 0; font-size: 16px; line-height: 1.5;">Kami menerima permintaan untuk mengatur ulang password akun RetinaScan Anda. Gunakan kode verifikasi berikut untuk menyelesaikan proses reset password:</p>
                   </td>
                 </tr>
                 
-                <!-- Content -->
+                <!-- Verification Code Box -->
                 <tr>
-                  <td style="padding: 40px 40px 30px;">
-                    <h2 style="margin: 0 0 20px; color: #1F2937; font-size: 24px; font-weight: 700;">Reset Kata Sandi</h2>
-                    
-                    <p style="margin: 0 0 20px; color: #4B5563; line-height: 1.6; font-size: 16px;">
-                      Halo <strong>${data.to_name || 'Pengguna'}</strong>,
-                    </p>
-                    
-                    <p style="margin: 0 0 20px; color: #4B5563; line-height: 1.6; font-size: 16px;">
-                      Kami menerima permintaan untuk mereset kata sandi akun RetinaScan Anda. Gunakan kode verifikasi berikut untuk melanjutkan proses reset kata sandi:
-                    </p>
-                    
-                    <!-- Verification Code Box -->
-                    <div style="background-color: #F3F4F6; border: 1px dashed #D1D5DB; border-radius: 8px; padding: 20px; margin: 30px 0; text-align: center;">
-                      <p style="margin: 0 0 10px; color: #6B7280; font-size: 14px; text-transform: uppercase; letter-spacing: 1px;">Kode Verifikasi</p>
-                      <div style="font-family: 'Courier New', monospace; font-size: 32px; letter-spacing: 5px; font-weight: 700; color: #4F46E5; background: linear-gradient(to right, #4F46E5, #7C3AED); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">
+                  <td align="center" style="padding: 0;">
+                    <div style="background-color: #f3f4f6; border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px; margin: 10px 0 30px 0; text-align: center;">
+                      <p style="margin: 0 0 10px 0; font-size: 14px; color: #6b7280;">Kode Verifikasi Anda:</p>
+                      <div style="font-family: 'Courier New', monospace; background-color: #ffffff; border: 2px solid #4f46e5; border-radius: 8px; color: #4f46e5; font-size: 28px; font-weight: bold; letter-spacing: 6px; padding: 15px; display: inline-block; min-width: 180px;">
                         ${data.reset_token}
                       </div>
+                      <p style="margin: 15px 0 0 0; font-size: 14px; color: #4b5563;">Kode ini berlaku selama 10 menit</p>
                     </div>
-                    
-                    <p style="margin: 0 0 30px; color: #4B5563; line-height: 1.6; font-size: 16px;">
-                      Kode ini akan kedaluwarsa dalam 10 menit. Jika Anda tidak membuat permintaan ini, abaikan email ini dan kata sandi Anda tidak akan berubah.
-                    </p>
-                    
-                    <!-- Button -->
-                    <div style="text-align: center;">
-                      <a href="${data.reset_link}" style="display: inline-block; background-image: linear-gradient(to right, #4F46E5, #7C3AED); color: white; text-decoration: none; padding: 14px 36px; border-radius: 8px; font-weight: 600; font-size: 16px; margin: 20px 0; box-shadow: 0 4px 12px rgba(79, 70, 229, 0.3); transition: all 0.3s ease;">
-                        Reset Kata Sandi
-                      </a>
-                    </div>
-                    
-                    <p style="margin: 30px 0 0; color: #6B7280; line-height: 1.6; font-size: 14px; border-top: 1px solid #E5E7EB; padding-top: 20px;">
-                      Jika tombol di atas tidak berfungsi, Anda dapat menyalin dan menempelkan tautan berikut ke browser Anda:
-                    </p>
-                    
-                    <p style="margin: 10px 0 0; color: #4F46E5; line-height: 1.4; font-size: 14px; word-break: break-all;">
-                      ${data.reset_link}
-                    </p>
                   </td>
                 </tr>
                 
-                <!-- Footer -->
+                <!-- Button -->
                 <tr>
-                  <td style="background-color: #F9FAFB; padding: 30px 40px; text-align: center; border-top: 1px solid #E5E7EB;">
-                    <p style="margin: 0 0 10px; color: #6B7280; font-size: 14px;">
-                      Email ini dikirim secara otomatis, mohon jangan membalas email ini.
-                    </p>
-                    <p style="margin: 0; color: #9CA3AF; font-size: 12px;">
-                      &copy; ${currentYear} RetinaScan. Semua hak dilindungi.
-                    </p>
+                  <td align="center" style="padding: 0;">
+                    <table border="0" cellspacing="0" cellpadding="0">
+                      <tr>
+                        <td align="center" style="border-radius: 8px;" bgcolor="#10b981">
+                          <a href="${data.reset_link}" target="_blank" style="display: inline-block; font-size: 16px; font-weight: bold; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color: #ffffff; text-decoration: none; text-align: center; padding: 15px 30px; border-radius: 8px; background-color: #10b981; box-shadow: 0 4px 6px -1px rgba(16, 185, 129, 0.2);">
+                            Reset Password
+                          </a>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+                
+                <!-- Instructions -->
+                <tr>
+                  <td style="padding: 30px 0 0 0;">
+                    <p style="margin: 0 0 15px 0; font-size: 16px; line-height: 1.5;">Jika Anda tidak dapat mengklik tombol di atas, gunakan link berikut untuk mengatur ulang password:</p>
+                    <p style="margin: 0 0 25px 0; font-size: 14px; word-break: break-all; color: #4f46e5;"><a href="${data.reset_link}" style="color: #4f46e5; text-decoration: underline;">${data.reset_link}</a></p>
+                    <p style="margin: 0 0 15px 0; font-size: 16px; line-height: 1.5;">Jika Anda tidak merasa melakukan permintaan ini, abaikan email ini dan password Anda akan tetap aman.</p>
+                  </td>
+                </tr>
+                
+                <!-- Security Notice -->
+                <tr>
+                  <td style="padding: 30px 0 0 0;">
+                    <div style="background-color: #eff6ff; border-left: 4px solid #3b82f6; border-radius: 4px; padding: 15px; margin-bottom: 30px;">
+                      <p style="margin: 0; font-size: 15px; line-height: 1.5; color: #1e40af;">
+                        <strong>Catatan Keamanan:</strong> RetinaScan tidak pernah meminta password atau informasi pribadi sensitif melalui email.
+                      </p>
+                    </div>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          
+          <!-- Footer -->
+          <tr>
+            <td style="padding: 0;">
+              <table width="100%" style="border-spacing: 0; background-color: #f3f4f6; text-align: center; padding: 30px 30px;">
+                <tr>
+                  <td style="padding: 0;">
+                    <p style="margin: 0 0 10px 0; font-size: 14px; color: #6b7280;">Email ini dikirim secara otomatis, mohon jangan membalas.</p>
+                    <p style="margin: 0; font-size: 14px; color: #6b7280;">&copy; ${currentYear} RetinaScan. Semua hak dilindungi.</p>
                   </td>
                 </tr>
               </table>
@@ -163,33 +185,33 @@ export const sendResetPasswordEmailWithNodemailer = async (data) => {
       </html>
     `;
     
-    // Text version sebagai fallback
+    // Versi teks plain sebagai fallback
     const textContent = `
-      RETINASCAN - RESET KATA SANDI
-      
-      Halo ${data.to_name || 'Pengguna'},
-      
-      Kami menerima permintaan untuk mereset kata sandi akun RetinaScan Anda.
-      
-      Kode verifikasi Anda: ${data.reset_token}
-      
-      Kode ini akan kedaluwarsa dalam 10 menit.
-      
-      Anda juga dapat mengakses tautan berikut untuk mereset kata sandi:
-      ${data.reset_link}
-      
-      Jika Anda tidak membuat permintaan ini, abaikan email ini dan kata sandi Anda tidak akan berubah.
-      
-      -------
-      Email ini dikirim secara otomatis, mohon jangan membalas email ini.
-      © ${currentYear} RetinaScan. Semua hak dilindungi.
+Halo ${data.to_name || 'Pengguna'},
+
+Kami menerima permintaan untuk mereset password akun RetinaScan Anda.
+
+KODE VERIFIKASI: ${data.reset_token}
+
+Kode ini berlaku selama 10 menit.
+
+Atau gunakan link berikut untuk mengatur ulang password: 
+${data.reset_link}
+
+Jika Anda tidak membuat permintaan ini, abaikan email ini dan password Anda tidak akan berubah.
+
+Catatan Keamanan: RetinaScan tidak pernah meminta password atau informasi pribadi sensitif melalui email.
+
+Email ini dikirim secara otomatis, mohon jangan membalas.
+
+© ${currentYear} RetinaScan. Semua hak dilindungi.
     `;
     
     // Kirim email
     const info = await transporter.sendMail({
       from: `"RetinaScan" <${process.env.EMAIL_USER || 'noreply@retinascan.com'}>`,
       to: data.to_email,
-      subject: 'Reset Kata Sandi RetinaScan',
+      subject: 'Reset Password RetinaScan',
       html: htmlContent,
       text: textContent,
     });
@@ -233,6 +255,9 @@ export const sendResetPasswordEmail = async (data) => {
   try {
     console.log('Mempersiapkan pengiriman email reset password ke:', data.to_email);
     
+    // Dapatkan tahun saat ini secara dinamis
+    const currentYear = new Date().getFullYear();
+    
     // Pastikan semua parameter yang diperlukan tersedia dengan nilai default jika tidak ada
     const templateParams = {
       to_email: data.to_email,
@@ -240,20 +265,12 @@ export const sendResetPasswordEmail = async (data) => {
       reset_link: data.reset_link || '',
       reset_token: data.reset_token || '',
       app_name: 'RetinaScan',
-      // Tambahkan tahun saat ini untuk footer
-      current_year: new Date().getFullYear().toString(),
+      current_year: currentYear.toString(),
       // Parameter tambahan yang mungkin diperlukan oleh template
       reply_to: data.to_email,
       from_name: 'RetinaScan',
-      subject: 'Reset Kata Sandi RetinaScan',
-      message: `Gunakan kode verifikasi ${data.reset_token} atau klik link berikut untuk reset kata sandi Anda: ${data.reset_link}`,
-      logo_url: 'https://i.ibb.co/DMQdS5F/eye-icon.png',
-      header_color: '#4F46E5',
-      button_color: '#4F46E5',
-      accent_color: '#7C3AED',
-      background_color: '#f4f7ff',
-      text_color: '#333333',
-      expires_in: '10 menit',
+      subject: 'Reset Password RetinaScan',
+      message: `Gunakan kode verifikasi ${data.reset_token} atau link berikut untuk reset password Anda: ${data.reset_link}`,
     };
     
     console.log('Parameter template:', JSON.stringify(templateParams, null, 2));
@@ -328,10 +345,11 @@ export const sendResetPasswordEmail = async (data) => {
 /**
  * Membuat link reset password dengan token
  * @param {string} token - Token reset password
- * @param {string} baseUrl - URL dasar (opsional)
+ * @param {string} baseUrl - Base URL aplikasi frontend
  * @returns {string} - Link reset password lengkap
  */
 export const createResetPasswordLink = (token, baseUrl = process.env.FRONTEND_URL || 'https://retinascan.onrender.com') => {
+  // Pastikan URL yang dibuat sesuai dengan route di React frontend
   return `${baseUrl}/#/reset-password?code=${token}`;
 };
 
