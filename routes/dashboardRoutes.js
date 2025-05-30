@@ -1,7 +1,7 @@
 import express from 'express';
-import auth from '../middleware/auth.js';
+import { authMiddleware as auth } from '../middleware/authMiddleware.js';
 import Patient from '../models/Patient.js';
-import Analysis from '../models/Analysis.js';
+import RetinaAnalysis from '../models/RetinaAnalysis.js';
 
 const router = express.Router();
 
@@ -14,19 +14,19 @@ router.get('/stats', auth, async (req, res) => {
     const totalPatients = await Patient.countDocuments();
     
     // Hitung total scan
-    const totalScans = await Analysis.countDocuments();
+    const totalScans = await RetinaAnalysis.countDocuments();
     
     // Hitung scan 7 hari terakhir
     const oneWeekAgo = new Date();
     oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
     
-    const recentScans = await Analysis.countDocuments({
+    const recentScans = await RetinaAnalysis.countDocuments({
       createdAt: { $gte: oneWeekAgo }
     });
     
-    // Hitung kondisi parah (severity >= 3)
-    const severeConditions = await Analysis.countDocuments({
-      'results.severity': { $gte: 3 }
+    // Hitung kondisi parah (Severe atau Proliferative DR)
+    const severeConditions = await RetinaAnalysis.countDocuments({
+      'results.classification': { $in: ['Severe', 'Proliferative DR'] }
     });
     
     res.json({
@@ -88,7 +88,7 @@ async function getScanTrendsData() {
   const thirtyDaysAgo = new Date();
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
   
-  const analyses = await Analysis.find({
+  const analyses = await RetinaAnalysis.find({
     createdAt: { $gte: thirtyDaysAgo }
   }).sort({ createdAt: 1 });
   
@@ -117,15 +117,21 @@ async function getScanTrendsData() {
 
 // Helper function untuk mendapatkan distribusi kondisi
 async function getConditionDistribution() {
-  const analyses = await Analysis.find();
+  const analyses = await RetinaAnalysis.find();
   
-  // Hitung jumlah setiap kondisi
-  const conditions = {};
+  // Hitung jumlah setiap kondisi berdasarkan classification
+  const conditions = {
+    'No DR': 0,
+    'Mild': 0,
+    'Moderate': 0,
+    'Severe': 0,
+    'Proliferative DR': 0
+  };
   
   analyses.forEach(analysis => {
-    if (analysis.results && analysis.results.condition) {
-      const condition = analysis.results.condition;
-      conditions[condition] = (conditions[condition] || 0) + 1;
+    if (analysis.results && analysis.results.classification) {
+      const classification = analysis.results.classification;
+      conditions[classification] = (conditions[classification] || 0) + 1;
     }
   });
   
@@ -191,28 +197,26 @@ async function getSeverityDistribution(timeRange) {
     query.createdAt = { $gte: oneYearAgo };
   }
   
-  const analyses = await Analysis.find(query);
+  const analyses = await RetinaAnalysis.find(query);
   
-  // Hitung jumlah setiap tingkat keparahan
+  // Hitung jumlah setiap tingkat keparahan berdasarkan classification
   const severityLevels = {
-    'Normal (0)': 0,
-    'Ringan (1)': 0,
-    'Sedang (2)': 0,
-    'Parah (3)': 0,
-    'Sangat Parah (4)': 0,
-    'Kritis (5)': 0
+    'No DR (0)': 0,
+    'Mild (1)': 0,
+    'Moderate (2)': 0,
+    'Severe (3)': 0,
+    'Proliferative DR (4)': 0
   };
   
   analyses.forEach(analysis => {
-    if (analysis.results && typeof analysis.results.severity === 'number') {
-      const severity = analysis.results.severity;
+    if (analysis.results && analysis.results.classification) {
+      const classification = analysis.results.classification;
       
-      if (severity === 0) severityLevels['Normal (0)']++;
-      else if (severity === 1) severityLevels['Ringan (1)']++;
-      else if (severity === 2) severityLevels['Sedang (2)']++;
-      else if (severity === 3) severityLevels['Parah (3)']++;
-      else if (severity === 4) severityLevels['Sangat Parah (4)']++;
-      else if (severity === 5) severityLevels['Kritis (5)']++;
+      if (classification === 'No DR') severityLevels['No DR (0)']++;
+      else if (classification === 'Mild') severityLevels['Mild (1)']++;
+      else if (classification === 'Moderate') severityLevels['Moderate (2)']++;
+      else if (classification === 'Severe') severityLevels['Severe (3)']++;
+      else if (classification === 'Proliferative DR') severityLevels['Proliferative DR (4)']++;
     }
   });
   
