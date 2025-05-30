@@ -646,8 +646,14 @@ router.get('/dashboard/stats', authMiddleware, async (req, res) => {
     
     patientsWithAge.forEach(analysis => {
       const gender = analysis.patientId.gender;
-      if (gender === 'Laki-laki') maleCount++;
-      else if (gender === 'Perempuan') femaleCount++;
+      if (gender) {
+        const genderLower = gender.toLowerCase();
+        if (genderLower === 'laki-laki' || genderLower === 'male' || genderLower === 'l' || genderLower === 'm') {
+          maleCount++;
+        } else if (genderLower === 'perempuan' || genderLower === 'female' || genderLower === 'p' || genderLower === 'f') {
+          femaleCount++;
+        }
+      }
     });
     
     const genderDistribution = [
@@ -708,13 +714,26 @@ router.get('/dashboard/stats', authMiddleware, async (req, res) => {
       },
       genderDistribution,
       confidenceLevels,
-      patients: patientsWithAge.map(a => ({
-        id: a.patientId._id,
-        name: a.patientId.fullName || a.patientId.name,
-        age: a.patientId.age,
-        gender: a.patientId.gender,
-        severity: severityMapping[a.results.classification] || a.results.classification
-      })),
+      patients: patientsWithAge.map(a => {
+        // Normalisasi nilai gender
+        let normalizedGender = 'Tidak Diketahui';
+        if (a.patientId.gender) {
+          const genderLower = a.patientId.gender.toLowerCase();
+          if (genderLower === 'laki-laki' || genderLower === 'male' || genderLower === 'l' || genderLower === 'm') {
+            normalizedGender = 'Laki-laki';
+          } else if (genderLower === 'perempuan' || genderLower === 'female' || genderLower === 'p' || genderLower === 'f') {
+            normalizedGender = 'Perempuan';
+          }
+        }
+        
+        return {
+          id: a.patientId._id,
+          name: a.patientId.fullName || a.patientId.name,
+          age: a.patientId.age,
+          gender: normalizedGender,
+          severity: severityMapping[a.results.classification] || a.results.classification
+        };
+      }),
       // Tambahkan data analisis untuk chart Analisis Tingkat Kepercayaan AI
       analyses: analysesForChart
     };
