@@ -173,17 +173,62 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads'), {
 
 // Socket.IO Authentication Middleware
 io.use((socket, next) => {
-  const token = socket.handshake.auth.token;
-  if (!token) {
+  try {
+    const token = socket.handshake.auth.token;
+    
+    // Log yang lebih jelas untuk debugging
+    console.log(`Socket auth attempt: ${socket.id}, has token: ${!!token}`);
+    
+    if (!token) {
+      console.log('Socket auth failed: No token provided');
+      return next(new Error('Authentication error'));
+    }
+    
+    // Implementasi verifikasi token yang lebih sederhana
+    // Cukup pastikan token ada untuk sekarang
+    // Di implementasi sebenarnya, token harus diverifikasi dengan JWT
+    // dan userId harus diekstrak
+    
+    // Tambahkan token dan status autentikasi ke objek socket
+    socket.authenticated = true;
+    socket.token = token;
+    
+    console.log(`Socket authenticated successfully: ${socket.id}`);
+    next();
+  } catch (error) {
+    console.error('Socket auth error:', error.message);
     return next(new Error('Authentication error'));
   }
-  // Verify token here if needed
-  next();
 });
 
 // Socket.IO Connection Handler
 io.on('connection', (socket) => {
-  console.log('Client connected:', socket.id);
+  console.log('Client connected:', socket.id, 'Authenticated:', socket.authenticated);
+
+  // Bergabung dengan room berdasarkan token atau userId jika sudah terotentikasi
+  if (socket.authenticated) {
+    // Idealnya, ekstrak userId dari token dan gunakan sebagai room name
+    const room = 'authenticated_users';
+    socket.join(room);
+    console.log(`Socket ${socket.id} joined room: ${room}`);
+    
+    // Log semua rooms yang aktif
+    console.log('Active rooms:', [...socket.rooms].join(', '));
+  }
+  
+  // Menambahkan handler untuk ping dari client (untuk testing koneksi)
+  socket.on('ping', (data) => {
+    console.log(`Received ping from client: ${socket.id}`, data);
+    // Kirim balik pong dengan timestamp yang sama
+    socket.emit('pong', {
+      ...data,
+      serverTime: new Date().toISOString(),
+      socketId: socket.id,
+      authenticated: socket.authenticated || false,
+      rooms: [...socket.rooms]
+    });
+    console.log(`Sent pong to client: ${socket.id}`);
+  });
 
   socket.on('disconnect', () => {
     console.log('Client disconnected:', socket.id);

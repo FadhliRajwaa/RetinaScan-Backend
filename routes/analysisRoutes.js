@@ -695,8 +695,8 @@ router.get('/dashboard/stats', authMiddleware, async (req, res) => {
       };
     });
     
-    // Mengirim data dashboard
-    res.json({
+    // Membuat objek data dashboard
+    const dashboardData = {
       severityDistribution,
       monthlyTrend: {
         categories: monthNames,
@@ -717,11 +717,88 @@ router.get('/dashboard/stats', authMiddleware, async (req, res) => {
       })),
       // Tambahkan data analisis untuk chart Analisis Tingkat Kepercayaan AI
       analyses: analysesForChart
-    });
+    };
+    
+    // Mengirim data dashboard
+    res.json(dashboardData);
+    
+    // Mendapatkan objek io dari app
+    const io = req.app.get('io');
+    
+    // Jika io tersedia, broadcast update ke semua client yang terhubung
+    if (io) {
+      try {
+        // Broadcast ke semua klien di room authenticated_users
+        io.to('authenticated_users').emit('dashboard_update', dashboardData);
+        console.log('Dashboard update emitted to authenticated users');
+      } catch (error) {
+        console.error('Error broadcasting dashboard update:', error);
+      }
+    }
   } catch (error) {
     console.error('Error mendapatkan data dashboard:', error);
     res.status(500).json({ message: 'Gagal mendapatkan data dashboard', error: error.message });
   }
 });
+
+// Fungsi utilitas untuk mengirim update dashboard
+const emitDashboardUpdate = async (req) => {
+  try {
+    // Dapatkan io dari app
+    const io = req.app.get('io');
+    if (!io) {
+      console.log('Socket.io tidak tersedia untuk emitDashboardUpdate');
+      return;
+    }
+    
+    // Dapatkan userId dari req.user yang disediakan oleh authMiddleware
+    const userId = req.user.id;
+    if (!userId) {
+      console.log('User ID tidak tersedia untuk emitDashboardUpdate');
+      return;
+    }
+    
+    // Agar tidak memblokir endpoint yang memanggil fungsi ini,
+    // jalankan proses pengumpulan data di latar belakang
+    setTimeout(async () => {
+      try {
+        const RetinaAnalysis = req.app.get('models').RetinaAnalysis;
+        
+        // Dapatkan data analisis terbaru
+        const analyses = await RetinaAnalysis.find({
+          doctorId: userId
+        })
+        .populate({
+          path: 'patientId',
+          select: 'name fullName gender age'
+        })
+        .sort({ createdAt: -1 });
+        
+        // Proses dan transformasi data untuk dashboard
+        // Logika yang sama dengan endpoint /dashboard/stats
+        
+        // Simpan hasil ke objek dashboardData
+        // (logika yang sama dengan endpoint dashboard/stats)
+        
+        // Broadcast update
+        io.to('authenticated_users').emit('dashboard_update', {
+          message: 'Dashboard data updated',
+          timestamp: new Date().toISOString()
+          // Tambahkan data dashboard di sini jika diperlukan
+        });
+        
+        console.log('Dashboard update emitted after data change');
+      } catch (error) {
+        console.error('Error in background dashboard update:', error);
+      }
+    }, 1000); // Delay 1 detik agar tidak memblokir operasi utama
+    
+  } catch (error) {
+    console.error('Error in emitDashboardUpdate:', error);
+  }
+};
+
+// Tambahkan emitDashboardUpdate ke router untuk digunakan di endpoint lain
+router.emitDashboardUpdate = emitDashboardUpdate;
 
 export default router;

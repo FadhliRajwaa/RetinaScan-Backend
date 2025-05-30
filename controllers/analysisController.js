@@ -440,8 +440,14 @@ const getPredictionFromFlaskApi = async (file, imageData) => {
 // Proses file retina untuk analisis
 export const processRetinaImage = async (req, res) => {
   try {
+    // Get socket.io from app
+    const io = req.app.get('io');
+    
+    // Validasi input
     if (!req.file && !req.body.imageData) {
-      return res.status(400).json({ message: 'File gambar tidak ditemukan' });
+      return res.status(400).json({ 
+        message: 'Tidak ada file gambar yang diunggah dan tidak ada data gambar yang diberikan' 
+      });
     }
 
     if (!req.body.patientId) {
@@ -629,6 +635,38 @@ export const processRetinaImage = async (req, res) => {
         isSimulation: useSimulation || predictionResult.isSimulation
       }
     });
+
+    // Broadcast ke semua client yang terhubung bahwa ada analisis baru
+    if (io) {
+      try {
+        // Emit notifikasi analisis baru
+        io.to('authenticated_users').emit('new_analysis', {
+          message: 'Analisis baru telah dibuat',
+          analysisId: savedAnalysis._id,
+          timestamp: new Date().toISOString()
+        });
+        
+        console.log('New analysis notification emitted to authenticated users');
+        
+        // Gunakan fungsi emitDashboardUpdate dari router jika tersedia
+        if (req.app._router && req.app._router.stack) {
+          // Cari router analysisRoutes
+          const analysisRouter = req.app._router.stack
+            .filter(layer => layer.route && layer.route.path === '/api/analysis')
+            .pop();
+          
+          if (analysisRouter && analysisRouter.handle && analysisRouter.handle.emitDashboardUpdate) {
+            // Panggil fungsi emitDashboardUpdate
+            analysisRouter.handle.emitDashboardUpdate(req);
+            console.log('Dashboard update triggered after new analysis');
+          } else {
+            console.log('emitDashboardUpdate not found on router');
+          }
+        }
+      } catch (error) {
+        console.error('Error broadcasting new analysis notification:', error);
+      }
+    }
   } catch (error) {
     console.error('Error saat memproses gambar retina:', error);
     res.status(500).json({ message: 'Gagal memproses gambar', error: error.message });
