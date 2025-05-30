@@ -586,6 +586,8 @@ router.get('/dashboard/stats', authMiddleware, async (req, res) => {
     
     // Hitung persentase untuk setiap tingkat keparahan
     const total = analyses.length || 1; // Hindari pembagian dengan nol
+    
+    // Pastikan semua kategori ada, termasuk "Sangat Berat"
     const severityDistribution = [
       Math.round((severityCounts['Tidak ada'] / total) * 100),
       Math.round((severityCounts['Ringan'] / total) * 100),
@@ -593,6 +595,14 @@ router.get('/dashboard/stats', authMiddleware, async (req, res) => {
       Math.round((severityCounts['Berat'] / total) * 100),
       Math.round((severityCounts['Sangat Berat'] / total) * 100)
     ];
+    
+    // Pastikan totalnya 100% dengan menyesuaikan nilai terbesar jika perlu
+    const sumPercent = severityDistribution.reduce((acc, val) => acc + val, 0);
+    if (sumPercent !== 100 && analyses.length > 0) {
+      // Cari indeks nilai maksimum untuk menyesuaikan
+      const maxIndex = severityDistribution.indexOf(Math.max(...severityDistribution));
+      severityDistribution[maxIndex] += (100 - sumPercent);
+    }
     
     // Menghitung tren analisis bulanan
     const now = new Date();
@@ -640,26 +650,42 @@ router.get('/dashboard/stats', authMiddleware, async (req, res) => {
       Math.round((count / totalPatients) * 100)
     );
     
-    // Menghitung distribusi gender
+    // Menghitung distribusi gender dengan normalisasi yang lebih baik
     let maleCount = 0;
     let femaleCount = 0;
+    let totalWithGender = 0;
     
     patientsWithAge.forEach(analysis => {
+      if (!analysis.patientId || !analysis.patientId.gender) return;
+      
       const gender = analysis.patientId.gender;
-      if (gender) {
-        const genderLower = gender.toLowerCase();
-        if (genderLower === 'laki-laki' || genderLower === 'male' || genderLower === 'l' || genderLower === 'm') {
-          maleCount++;
-        } else if (genderLower === 'perempuan' || genderLower === 'female' || genderLower === 'p' || genderLower === 'f') {
-          femaleCount++;
-        }
+      const genderLower = gender.toLowerCase().trim();
+      totalWithGender++;
+      
+      if (genderLower === 'laki-laki' || genderLower === 'male' || genderLower === 'l' || genderLower === 'm') {
+        maleCount++;
+      } else if (genderLower === 'perempuan' || genderLower === 'female' || genderLower === 'p' || genderLower === 'f') {
+        femaleCount++;
       }
     });
     
+    // Hindari pembagian dengan nol untuk distribusi gender
+    const totalGender = totalWithGender || 1;
     const genderDistribution = [
-      Math.round((maleCount / totalPatients) * 100),
-      Math.round((femaleCount / totalPatients) * 100)
+      Math.round((maleCount / totalGender) * 100),
+      Math.round((femaleCount / totalGender) * 100)
     ];
+    
+    // Pastikan total adalah 100%
+    const genderSum = genderDistribution[0] + genderDistribution[1];
+    if (genderSum !== 100 && totalWithGender > 0) {
+      // Jika tidak 100%, sesuaikan nilai terbesar
+      if (maleCount >= femaleCount) {
+        genderDistribution[0] += (100 - genderSum);
+      } else {
+        genderDistribution[1] += (100 - genderSum);
+      }
+    }
     
     // Menghitung tingkat kepercayaan AI
     let totalConfidence = 0;
@@ -715,10 +741,10 @@ router.get('/dashboard/stats', authMiddleware, async (req, res) => {
       genderDistribution,
       confidenceLevels,
       patients: patientsWithAge.map(a => {
-        // Normalisasi nilai gender
-        let normalizedGender = 'Tidak Diketahui';
+        // Normalisasi nilai gender dengan validasi ketat
+        let normalizedGender = 'Tidak Tersedia';
         if (a.patientId.gender) {
-          const genderLower = a.patientId.gender.toLowerCase();
+          const genderLower = a.patientId.gender.toLowerCase().trim();
           if (genderLower === 'laki-laki' || genderLower === 'male' || genderLower === 'l' || genderLower === 'm') {
             normalizedGender = 'Laki-laki';
           } else if (genderLower === 'perempuan' || genderLower === 'female' || genderLower === 'p' || genderLower === 'f') {
@@ -726,12 +752,21 @@ router.get('/dashboard/stats', authMiddleware, async (req, res) => {
           }
         }
         
+        // Validasi umur untuk pastikan nilai numerik
+        let normalizedAge = null;
+        if (a.patientId.age !== undefined && a.patientId.age !== null) {
+          const ageNum = parseInt(a.patientId.age, 10);
+          if (!isNaN(ageNum)) {
+            normalizedAge = ageNum;
+          }
+        }
+        
         return {
           id: a.patientId._id,
-          name: a.patientId.fullName || a.patientId.name,
-          age: a.patientId.age,
+          name: a.patientId.fullName || a.patientId.name || 'Pasien Tidak Tersedia',
+          age: normalizedAge,
           gender: normalizedGender,
-          severity: severityMapping[a.results.classification] || a.results.classification
+          severity: severityMapping[a.results.classification] || a.results.classification || 'Tidak Tersedia'
         };
       }),
       // Tambahkan data analisis untuk chart Analisis Tingkat Kepercayaan AI
