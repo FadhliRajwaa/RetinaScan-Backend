@@ -10,7 +10,25 @@ const patientSchema = new mongoose.Schema({
   fullName: { type: String, required: true },
   age: { type: Number },
   dateOfBirth: { type: Date, required: true },
-  gender: { type: String, enum: ['male', 'female', ''], required: true },
+  gender: { 
+    type: String, 
+    enum: ['Laki-laki', 'Perempuan', ''], 
+    required: true,
+    set: function(gender) {
+      // Normalisasi gender ke format standar bahasa Indonesia
+      if (!gender) return '';
+      
+      const genderLower = gender.toLowerCase().trim();
+      if (genderLower === 'laki-laki' || genderLower === 'male' || genderLower === 'l' || genderLower === 'm') {
+        return 'Laki-laki';
+      } else if (genderLower === 'perempuan' || genderLower === 'female' || genderLower === 'p' || genderLower === 'f') {
+        return 'Perempuan';
+      }
+      
+      // Default jika tidak terdeteksi
+      return gender;
+    }
+  },
   phone: { type: String, required: true },
   address: { type: String, required: true },
   bloodType: { type: String, enum: ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-', ''] },
