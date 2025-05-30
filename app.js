@@ -7,6 +7,7 @@ import analysisRoutes from './routes/analysisRoutes.js';
 import userRoutes from './routes/userRoutes.js'; // Tambahkan rute baru
 import patientRoutes from './routes/patientRoutes.js'; // Import patient routes
 import dashboardRoutes from './routes/dashboardRoutes.js'; // Import dashboard routes
+import emailRoutes from './routes/emailRoutes.js'; // Import email routes
 import errorHandler from './utils/errorHandler.js';
 import path from 'path';
 import fs from 'fs';
@@ -273,9 +274,10 @@ app.get('/api/health', (req, res) => {
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/analysis', analysisRoutes);
-app.use('/api/user', userRoutes); // Tambahkan rute pengguna
-app.use('/api/patients', patientRoutes); // Tambahkan patient routes
-app.use('/api/dashboard', dashboardRoutes); // Tambahkan dashboard routes
+app.use('/api/users', userRoutes);
+app.use('/api/patients', patientRoutes);
+app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/email', emailRoutes); // Tambahkan route email
 
 // Error handling
 app.use(errorHandler);
