@@ -8,13 +8,6 @@ import {
   createPatient, 
   updatePatient, 
   deletePatient,
-  registerUser, 
-  loginUser, 
-  getUserProfile, 
-  updateUserProfile, 
-  changePassword,
-  requestPasswordReset,
-  resetPassword,
   updateNotificationSettings,
   getNotificationSettings
 } from '../controllers/userController.js';
