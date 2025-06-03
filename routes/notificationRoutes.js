@@ -7,12 +7,12 @@ import {
   deleteAllNotifications,
   createNotification
 } from '../controllers/notificationController.js';
-import { verifyToken } from '../middleware/authMiddleware.js';
+import { authMiddleware } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
 // Semua routes memerlukan autentikasi
-router.use(verifyToken);
+router.use(authMiddleware);
 
 // Route untuk mendapatkan semua notifikasi user
 router.get('/', getNotifications);

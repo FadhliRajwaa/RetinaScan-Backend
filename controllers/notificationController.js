@@ -1,6 +1,6 @@
 import Notification from '../models/Notification.js';
 import mongoose from 'mongoose';
-import { verifyToken } from '../middleware/authMiddleware.js';
+import { authMiddleware } from '../middleware/authMiddleware.js';
 
 // Mendapatkan semua notifikasi untuk user yang sedang login
 export const getNotifications = async (req, res) => {
