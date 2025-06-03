@@ -10,22 +10,24 @@ const router = express.Router();
 // @access  Private
 router.get('/stats', auth, async (req, res) => {
   try {
-    // Hitung total pasien
-    const totalPatients = await Patient.countDocuments();
+    // Hitung total pasien milik user yang login
+    const totalPatients = await Patient.countDocuments({ userId: req.user.id });
     
-    // Hitung total scan
-    const totalScans = await RetinaAnalysis.countDocuments();
+    // Hitung total scan milik user yang login
+    const totalScans = await RetinaAnalysis.countDocuments({ doctorId: req.user.id });
     
-    // Hitung scan 7 hari terakhir
+    // Hitung scan 7 hari terakhir milik user yang login
     const oneWeekAgo = new Date();
     oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
     
     const recentScans = await RetinaAnalysis.countDocuments({
+      doctorId: req.user.id,
       createdAt: { $gte: oneWeekAgo }
     });
     
-    // Hitung kondisi parah (Severe atau Proliferative DR)
+    // Hitung kondisi parah (Severe atau Proliferative DR) milik user yang login
     const severeConditions = await RetinaAnalysis.countDocuments({
+      doctorId: req.user.id,
       'results.classification': { $in: ['Severe', 'Proliferative DR'] }
     });
     
@@ -47,13 +49,13 @@ router.get('/stats', auth, async (req, res) => {
 router.get('/charts', auth, async (req, res) => {
   try {
     // Data untuk scan trends (30 hari terakhir)
-    const scanTrends = await getScanTrendsData();
+    const scanTrends = await getScanTrendsData(req.user.id);
     
     // Data untuk distribusi kondisi
-    const conditionDistribution = await getConditionDistribution();
+    const conditionDistribution = await getConditionDistribution(req.user.id);
     
     // Data untuk distribusi umur
-    const ageDistribution = await getAgeDistribution();
+    const ageDistribution = await getAgeDistribution(req.user.id);
     
     res.json({
       scanTrends,
@@ -74,7 +76,7 @@ router.get('/severity', auth, async (req, res) => {
     const timeRange = req.query.timeRange || 'all';
     
     // Data untuk distribusi tingkat keparahan
-    const severityData = await getSeverityDistribution(timeRange);
+    const severityData = await getSeverityDistribution(timeRange, req.user.id);
     
     res.json(severityData);
   } catch (err) {
@@ -84,11 +86,12 @@ router.get('/severity', auth, async (req, res) => {
 });
 
 // Helper function untuk mendapatkan data tren scan
-async function getScanTrendsData() {
+async function getScanTrendsData(userId) {
   const thirtyDaysAgo = new Date();
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
   
   const analyses = await RetinaAnalysis.find({
+    doctorId: userId,
     createdAt: { $gte: thirtyDaysAgo }
   }).sort({ createdAt: 1 });
   
@@ -116,8 +119,8 @@ async function getScanTrendsData() {
 }
 
 // Helper function untuk mendapatkan distribusi kondisi
-async function getConditionDistribution() {
-  const analyses = await RetinaAnalysis.find();
+async function getConditionDistribution(userId) {
+  const analyses = await RetinaAnalysis.find({ doctorId: userId });
   
   // Hitung jumlah setiap kondisi berdasarkan classification
   const conditions = {
@@ -142,8 +145,8 @@ async function getConditionDistribution() {
 }
 
 // Helper function untuk mendapatkan distribusi umur
-async function getAgeDistribution() {
-  const patients = await Patient.find();
+async function getAgeDistribution(userId) {
+  const patients = await Patient.find({ userId });
   
   // Kelompokkan berdasarkan rentang umur
   const ageGroups = {
@@ -179,8 +182,8 @@ async function getAgeDistribution() {
 }
 
 // Helper function untuk mendapatkan distribusi tingkat keparahan
-async function getSeverityDistribution(timeRange) {
-  let query = {};
+async function getSeverityDistribution(timeRange, userId) {
+  let query = { doctorId: userId };
   
   // Filter berdasarkan timeRange
   if (timeRange === 'week') {
