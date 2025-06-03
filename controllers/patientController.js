@@ -62,20 +62,6 @@ export const createPatient = async (req, res, next) => {
     });
     
     await newPatient.save();
-    
-    // Kirim notifikasi melalui Socket.IO
-    const io = req.app.get('io');
-    if (io) {
-      io.to('authenticated_users').emit('patient_added', {
-        patientId: newPatient._id,
-        patientName: newPatient.fullName || newPatient.name,
-        timestamp: new Date().toISOString(),
-        doctorId: req.user.id
-      });
-      
-      console.log('Notifikasi pasien baru telah dikirim');
-    }
-    
     res.status(201).json({ message: 'Pasien berhasil ditambahkan', patient: newPatient });
   } catch (error) {
     next(error);
@@ -120,20 +106,6 @@ export const updatePatient = async (req, res, next) => {
     patient.emergencyContact = emergencyContact || patient.emergencyContact;
     
     await patient.save();
-    
-    // Kirim notifikasi melalui Socket.IO
-    const io = req.app.get('io');
-    if (io) {
-      io.to('authenticated_users').emit('patient_updated', {
-        patientId: patient._id,
-        patientName: patient.fullName || patient.name,
-        timestamp: new Date().toISOString(),
-        doctorId: req.user.id
-      });
-      
-      console.log('Notifikasi update pasien telah dikirim');
-    }
-    
     res.json({ message: 'Data pasien berhasil diperbarui', patient });
   } catch (error) {
     next(error);
@@ -151,24 +123,7 @@ export const deletePatient = async (req, res, next) => {
     
     if (!patient) return res.status(404).json({ message: 'Data pasien tidak ditemukan' });
     
-    const patientName = patient.fullName || patient.name;
-    const patientId = patient._id;
-    
     await Patient.findByIdAndDelete(req.params.id);
-    
-    // Kirim notifikasi melalui Socket.IO
-    const io = req.app.get('io');
-    if (io) {
-      io.to('authenticated_users').emit('patient_deleted', {
-        patientId: patientId,
-        patientName: patientName,
-        timestamp: new Date().toISOString(),
-        doctorId: req.user.id
-      });
-      
-      console.log('Notifikasi hapus pasien telah dikirim');
-    }
-    
     res.json({ message: 'Data pasien berhasil dihapus' });
   } catch (error) {
     next(error);

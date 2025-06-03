@@ -639,32 +639,14 @@ export const processRetinaImage = async (req, res) => {
     // Broadcast ke semua client yang terhubung bahwa ada analisis baru
     if (io) {
       try {
-        // Emit notifikasi analisis baru dengan informasi lebih detail
+        // Emit notifikasi analisis baru
         io.to('authenticated_users').emit('new_analysis', {
           message: 'Analisis baru telah dibuat',
           analysisId: savedAnalysis._id,
-          patientId: savedAnalysis.patientId,
-          patientName: patient.fullName || patient.name,
-          severity: severity,
-          severityLevel: severityLevel,
-          timestamp: new Date().toISOString(),
-          doctorId: req.user.id
+          timestamp: new Date().toISOString()
         });
         
         console.log('New analysis notification emitted to authenticated users');
-        
-        // Kirim notifikasi umum untuk semua user
-        io.to('authenticated_users').emit('notification', {
-          title: 'Hasil Scan Retina Baru',
-          message: `Hasil scan retina baru untuk pasien ${patient.fullName || patient.name} telah tersedia. Tingkat keparahan: ${severity}`,
-          type: 'new_analysis',
-          data: {
-            analysisId: savedAnalysis._id,
-            patientId: savedAnalysis.patientId,
-            severity: severity,
-            timestamp: new Date().toISOString()
-          }
-        });
         
         // Gunakan fungsi emitDashboardUpdate dari router jika tersedia
         if (req.app._router && req.app._router.stack) {
