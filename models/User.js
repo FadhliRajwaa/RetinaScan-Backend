@@ -17,6 +17,24 @@ const userSchema = new mongoose.Schema({
   emergencyContact: { type: String },
   resetPasswordCode: { type: String },
   resetPasswordExpires: { type: Date },
+  notificationSettings: {
+    type: {
+      patient_added: { type: Boolean, default: true },
+      patient_updated: { type: Boolean, default: true },
+      patient_deleted: { type: Boolean, default: true },
+      scan_added: { type: Boolean, default: true },
+      scan_updated: { type: Boolean, default: true },
+      system: { type: Boolean, default: true }
+    },
+    default: {
+      patient_added: true,
+      patient_updated: true,
+      patient_deleted: true,
+      scan_added: true,
+      scan_updated: true,
+      system: true
+    }
+  },
 });
 
 userSchema.pre('save', async function (next) {

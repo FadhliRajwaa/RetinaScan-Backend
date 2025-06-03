@@ -1,4 +1,6 @@
 import Patient from '../models/Patient.js';
+import { createNotificationUtil } from './notificationController.js';
+import User from '../models/User.js';
 
 // Fungsi untuk mendapatkan semua data pasien milik user yang sedang login
 export const getAllPatients = async (req, res, next) => {
@@ -27,42 +29,44 @@ export const getPatientById = async (req, res, next) => {
   }
 };
 
-// Fungsi untuk menambah pasien baru
+// Fungsi untuk membuat pasien baru
 export const createPatient = async (req, res, next) => {
-  const { 
-    name,
-    fullName,
-    dateOfBirth,
-    age, 
-    gender, 
-    phone, 
-    address, 
-    bloodType,
-    medicalHistory,
-    allergies,
-    lastCheckup,
-    emergencyContact
-  } = req.body;
-  
   try {
+    // Tambahkan userId dari user yang sedang login
     const newPatient = new Patient({
-      userId: req.user.id, // Kaitkan pasien dengan user yang login
-      name,
-      fullName,
-      dateOfBirth,
-      age,
-      gender,
-      phone,
-      address,
-      bloodType,
-      medicalHistory,
-      allergies,
-      lastCheckup,
-      emergencyContact
+      ...req.body,
+      userId: req.user.id
     });
+
+    const savedPatient = await newPatient.save();
     
-    await newPatient.save();
-    res.status(201).json({ message: 'Pasien berhasil ditambahkan', patient: newPatient });
+    // Kirim notifikasi jika pengaturan notifikasi mengizinkan
+    const user = await User.findById(req.user.id);
+    if (user && user.notificationSettings && user.notificationSettings.patient_added) {
+      await createNotificationUtil({
+        userId: req.user.id,
+        type: 'patient_added',
+        title: 'Pasien Baru',
+        message: `Pasien baru "${savedPatient.name}" telah ditambahkan`,
+        entityId: savedPatient._id,
+        entityModel: 'Patient',
+        data: { patientId: savedPatient._id, patientName: savedPatient.name }
+      });
+      
+      // Emit socket event untuk notifikasi real-time
+      const io = req.app.get('io');
+      const userRoom = `user:${req.user.id}`;
+      io.to(userRoom).emit('notification', {
+        type: 'patient_added',
+        title: 'Pasien Baru',
+        message: `Pasien baru "${savedPatient.name}" telah ditambahkan`,
+        entityId: savedPatient._id,
+        entityModel: 'Patient',
+        data: { patientId: savedPatient._id, patientName: savedPatient.name }
+      });
+    }
+    
+    res.status(201).json(savedPatient);
   } catch (error) {
     next(error);
   }
@@ -70,20 +74,6 @@ export const createPatient = async (req, res, next) => {
 
 // Fungsi untuk mengupdate data pasien
 export const updatePatient = async (req, res, next) => {
-  const { 
-    fullName,
-    dateOfBirth,
-    age, 
-    gender, 
-    phone, 
-    address, 
-    bloodType,
-    medicalHistory,
-    allergies,
-    lastCheckup,
-    emergencyContact
-  } = req.body;
-  
   try {
     // Hanya update pasien milik user yang sedang login
     const patient = await Patient.findOne({ 
@@ -91,22 +81,45 @@ export const updatePatient = async (req, res, next) => {
       userId: req.user.id 
     });
     
-    if (!patient) return res.status(404).json({ message: 'Data pasien tidak ditemukan' });
+    if (!patient) return res.status(404).json({ message: 'Pasien tidak ditemukan' });
     
-    patient.fullName = fullName || patient.fullName;
-    patient.dateOfBirth = dateOfBirth || patient.dateOfBirth;
-    patient.age = age || patient.age;
-    patient.gender = gender || patient.gender;
-    patient.phone = phone || patient.phone;
-    patient.address = address || patient.address;
-    patient.bloodType = bloodType || patient.bloodType;
-    patient.medicalHistory = medicalHistory || patient.medicalHistory;
-    patient.allergies = allergies || patient.allergies;
-    patient.lastCheckup = lastCheckup || patient.lastCheckup;
-    patient.emergencyContact = emergencyContact || patient.emergencyContact;
+    // Simpan nama pasien sebelum diupdate untuk notifikasi
+    const previousName = patient.name;
     
-    await patient.save();
-    res.json({ message: 'Data pasien berhasil diperbarui', patient });
+    // Update data pasien
+    const updatedPatient = await Patient.findByIdAndUpdate(
+      req.params.id, 
+      { $set: req.body }, 
+      { new: true }
+    );
+    
+    // Kirim notifikasi jika pengaturan notifikasi mengizinkan
+    const user = await User.findById(req.user.id);
+    if (user && user.notificationSettings && user.notificationSettings.patient_updated) {
+      await createNotificationUtil({
+        userId: req.user.id,
+        type: 'patient_updated',
+        title: 'Data Pasien Diperbarui',
+        message: `Data pasien "${updatedPatient.name}" telah diperbarui`,
+        entityId: updatedPatient._id,
+        entityModel: 'Patient',
+        data: { patientId: updatedPatient._id, patientName: updatedPatient.name, previousName }
+      });
+      
+      // Emit socket event untuk notifikasi real-time
+      const io = req.app.get('io');
+      const userRoom = `user:${req.user.id}`;
+      io.to(userRoom).emit('notification', {
+        type: 'patient_updated',
+        title: 'Data Pasien Diperbarui',
+        message: `Data pasien "${updatedPatient.name}" telah diperbarui`,
+        entityId: updatedPatient._id,
+        entityModel: 'Patient',
+        data: { patientId: updatedPatient._id, patientName: updatedPatient.name, previousName }
+      });
+    }
+    
+    res.json(updatedPatient);
   } catch (error) {
     next(error);
   }
@@ -121,10 +134,37 @@ export const deletePatient = async (req, res, next) => {
       userId: req.user.id 
     });
     
-    if (!patient) return res.status(404).json({ message: 'Data pasien tidak ditemukan' });
+    if (!patient) return res.status(404).json({ message: 'Pasien tidak ditemukan' });
+    
+    // Simpan nama pasien sebelum dihapus untuk notifikasi
+    const patientName = patient.name;
+    const patientId = patient._id;
     
     await Patient.findByIdAndDelete(req.params.id);
-    res.json({ message: 'Data pasien berhasil dihapus' });
+    
+    // Kirim notifikasi jika pengaturan notifikasi mengizinkan
+    const user = await User.findById(req.user.id);
+    if (user && user.notificationSettings && user.notificationSettings.patient_deleted) {
+      await createNotificationUtil({
+        userId: req.user.id,
+        type: 'patient_deleted',
+        title: 'Pasien Dihapus',
+        message: `Pasien "${patientName}" telah dihapus`,
+        data: { patientName }
+      });
+      
+      // Emit socket event untuk notifikasi real-time
+      const io = req.app.get('io');
+      const userRoom = `user:${req.user.id}`;
+      io.to(userRoom).emit('notification', {
+        type: 'patient_deleted',
+        title: 'Pasien Dihapus',
+        message: `Pasien "${patientName}" telah dihapus`,
+        data: { patientName }
+      });
+    }
+    
+    res.json({ message: 'Pasien berhasil dihapus' });
   } catch (error) {
     next(error);
   }

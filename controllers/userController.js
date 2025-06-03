@@ -180,3 +180,53 @@ export const deletePatient = async (req, res, next) => {
     next(error);
   }
 };
+
+// Fungsi untuk mengupdate pengaturan notifikasi pengguna
+export const updateNotificationSettings = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { notificationSettings } = req.body;
+    
+    if (!notificationSettings) {
+      return res.status(400).json({ message: 'Pengaturan notifikasi diperlukan' });
+    }
+    
+    const user = await User.findById(userId);
+    
+    if (!user) {
+      return res.status(404).json({ message: 'Pengguna tidak ditemukan' });
+    }
+    
+    // Update pengaturan notifikasi
+    user.notificationSettings = notificationSettings;
+    await user.save();
+    
+    res.status(200).json({ 
+      message: 'Pengaturan notifikasi berhasil diperbarui',
+      notificationSettings: user.notificationSettings
+    });
+  } catch (error) {
+    console.error('Error updating notification settings:', error);
+    res.status(500).json({ message: 'Terjadi kesalahan saat memperbarui pengaturan notifikasi' });
+  }
+};
+
+// Fungsi untuk mendapatkan pengaturan notifikasi pengguna
+export const getNotificationSettings = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    
+    const user = await User.findById(userId);
+    
+    if (!user) {
+      return res.status(404).json({ message: 'Pengguna tidak ditemukan' });
+    }
+    
+    res.status(200).json({ 
+      notificationSettings: user.notificationSettings
+    });
+  } catch (error) {
+    console.error('Error getting notification settings:', error);
+    res.status(500).json({ message: 'Terjadi kesalahan saat mengambil pengaturan notifikasi' });
+  }
+};

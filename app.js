@@ -8,6 +8,7 @@ import userRoutes from './routes/userRoutes.js'; // Tambahkan rute baru
 import patientRoutes from './routes/patientRoutes.js'; // Import patient routes
 import dashboardRoutes from './routes/dashboardRoutes.js'; // Import dashboard routes
 import emailRoutes from './routes/emailRoutes.js'; // Import email routes
+import notificationRoutes from './routes/notificationRoutes.js'; // Import notification routes
 import errorHandler from './utils/errorHandler.js';
 import path from 'path';
 import fs from 'fs';
@@ -19,7 +20,9 @@ import mongoose from 'mongoose';
 import RetinaAnalysis from './models/RetinaAnalysis.js';
 import User from './models/User.js';
 import Patient from './models/Patient.js';
+import Notification from './models/Notification.js'; // Import model Notification
 import compression from 'compression'; // Ubah dari express-compression menjadi compression
+import jwt from 'jsonwebtoken';
 
 // Konfigurasi environment variables
 dotenv.config();
@@ -209,13 +212,27 @@ io.on('connection', (socket) => {
 
   // Bergabung dengan room berdasarkan token atau userId jika sudah terotentikasi
   if (socket.authenticated) {
-    // Idealnya, ekstrak userId dari token dan gunakan sebagai room name
-    const room = 'authenticated_users';
-    socket.join(room);
-    console.log(`Socket ${socket.id} joined room: ${room}`);
-    
-    // Log semua rooms yang aktif
-    console.log('Active rooms:', [...socket.rooms].join(', '));
+    try {
+      // Ekstrak userId dari token
+      const token = socket.token;
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      const userId = decoded.id;
+      
+      // Bergabung dengan room khusus untuk user
+      const userRoom = `user:${userId}`;
+      socket.join(userRoom);
+      console.log(`Socket ${socket.id} joined room: ${userRoom}`);
+      
+      // Bergabung dengan room umum untuk semua user yang terotentikasi
+      const room = 'authenticated_users';
+      socket.join(room);
+      console.log(`Socket ${socket.id} joined room: ${room}`);
+      
+      // Log semua rooms yang aktif
+      console.log('Active rooms:', [...socket.rooms].join(', '));
+    } catch (error) {
+      console.error('Error joining user room:', error.message);
+    }
   }
   
   // Menambahkan handler untuk ping dari client (untuk testing koneksi)
@@ -232,6 +249,33 @@ io.on('connection', (socket) => {
     console.log(`Sent pong to client: ${socket.id}`);
   });
 
+  // Handler untuk mendapatkan jumlah notifikasi yang belum dibaca
+  socket.on('get_unread_count', async () => {
+    try {
+      if (!socket.authenticated) {
+        socket.emit('error', { message: 'Authentication required' });
+        return;
+      }
+      
+      // Ekstrak userId dari token
+      const token = socket.token;
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      const userId = decoded.id;
+      
+      // Dapatkan model Notification
+      const Notification = mongoose.model('Notification');
+      
+      // Dapatkan jumlah notifikasi yang belum dibaca
+      const unreadCount = await Notification.countUnread(userId);
+      
+      // Kirim jumlah notifikasi yang belum dibaca
+      socket.emit('unread_count', { unreadCount });
+    } catch (error) {
+      console.error('Error getting unread count:', error.message);
+      socket.emit('error', { message: 'Error getting unread count' });
+    }
+  });
+
   socket.on('disconnect', () => {
     console.log('Client disconnected:', socket.id);
   });
@@ -244,7 +288,8 @@ app.set('io', io);
 app.set('models', {
   RetinaAnalysis,
   User,
-  Patient
+  Patient,
+  Notification // Tambahkan model Notification
 });
 
 // Health check endpoint
@@ -278,6 +323,7 @@ app.use('/api/user', userRoutes);
 app.use('/api/patients', patientRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/email', emailRoutes); // Tambahkan route email
+app.use('/api/notifications', notificationRoutes); // Tambahkan route notifikasi
 
 // Error handling
 app.use(errorHandler);
