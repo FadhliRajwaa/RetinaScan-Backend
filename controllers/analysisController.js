@@ -7,6 +7,8 @@ import RetinaAnalysis from '../models/RetinaAnalysis.js';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import { v4 as uuidv4 } from 'uuid';
+import { createNotificationUtil } from './notificationController.js';
+import User from '../models/User.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -461,6 +463,9 @@ export const processRetinaImage = async (req, res) => {
       return res.status(404).json({ message: 'Pasien tidak ditemukan' });
     }
 
+    // Periksa apakah ini adalah penyimpanan manual dari hasil analisis sebelumnya
+    const isManualSave = req.body.isManualSave === 'true' || req.body.isManualSave === true;
+
     // Gunakan analysisId sebagai identifier unik
     const analysisId = uuidv4();
     const timestamp = new Date().toISOString();
@@ -481,6 +486,29 @@ export const processRetinaImage = async (req, res) => {
       
       predictionResult = await getPredictionFromFlaskApi(req.file, req.body.imageData);
       console.log('Hasil prediksi:', predictionResult);
+
+      // Kirim notifikasi upload gambar berhasil jika pengaturan notifikasi mengizinkan
+      if (!isManualSave) { // Hanya kirim notifikasi jika bukan simpan manual
+        const user = await User.findById(req.user.id);
+        if (user && user.notificationSettings && user.notificationSettings.scan_added) {
+          // Buat notifikasi upload berhasil
+          const notificationUpload = await createNotificationUtil({
+            userId: req.user.id,
+            type: 'scan_added',
+            title: 'Upload Gambar Berhasil',
+            message: `Gambar retina untuk pasien "${patient.name}" berhasil diunggah`,
+            entityId: patient._id,
+            entityModel: 'Patient',
+            data: { patientId: patient._id, patientName: patient.name }
+          });
+          
+          // Kirim notifikasi melalui Socket.IO jika berhasil dibuat
+          if (notificationUpload && io) {
+            const userRoom = `user:${req.user.id}`;
+            io.to(userRoom).emit('notification', notificationUpload);
+          }
+        }
+      }
     } catch (flaskError) {
       console.error('Error saat menghubungi Flask API, beralih ke mode simulasi:', flaskError);
       errorMessage = flaskError.message || 'Error tidak diketahui';
@@ -598,6 +626,62 @@ export const processRetinaImage = async (req, res) => {
     // Simpan analisis ke database
     const savedAnalysis = await newAnalysis.save();
     console.log('Analisis berhasil disimpan ke database dengan ID:', savedAnalysis._id);
+
+    // Kirim notifikasi analisis berhasil jika pengaturan notifikasi mengizinkan
+    if (!isManualSave) { // Hanya kirim notifikasi jika bukan simpan manual
+      const user = await User.findById(req.user.id);
+      if (user && user.notificationSettings && user.notificationSettings.scan_added) {
+        // Buat notifikasi analisis berhasil
+        const notificationAnalysis = await createNotificationUtil({
+          userId: req.user.id,
+          type: 'scan_added',
+          title: 'Analisis Retina Berhasil',
+          message: `Analisis retina untuk pasien "${patient.name}" telah selesai dengan tingkat keparahan ${severity}`,
+          entityId: savedAnalysis._id,
+          entityModel: 'RetinaAnalysis',
+          data: { 
+            patientId: patient._id, 
+            patientName: patient.name,
+            analysisId: savedAnalysis._id,
+            severity: severity,
+            severityLevel: severityLevel
+          }
+        });
+        
+        // Kirim notifikasi melalui Socket.IO jika berhasil dibuat
+        if (notificationAnalysis && io) {
+          const userRoom = `user:${req.user.id}`;
+          io.to(userRoom).emit('notification', notificationAnalysis);
+        }
+      }
+    } else {
+      // Jika ini adalah penyimpanan manual (dari tombol Simpan), kirim notifikasi tersendiri
+      const user = await User.findById(req.user.id);
+      if (user && user.notificationSettings && user.notificationSettings.scan_updated) {
+        // Buat notifikasi penyimpanan hasil berhasil
+        const notificationSave = await createNotificationUtil({
+          userId: req.user.id,
+          type: 'scan_updated',
+          title: 'Hasil Analisis Disimpan',
+          message: `Hasil analisis retina untuk pasien "${patient.name}" berhasil disimpan ke database`,
+          entityId: savedAnalysis._id,
+          entityModel: 'RetinaAnalysis',
+          data: { 
+            patientId: patient._id, 
+            patientName: patient.name,
+            analysisId: savedAnalysis._id,
+            severity: severity,
+            severityLevel: severityLevel
+          }
+        });
+        
+        // Kirim notifikasi melalui Socket.IO jika berhasil dibuat
+        if (notificationSave && io) {
+          const userRoom = `user:${req.user.id}`;
+          io.to(userRoom).emit('notification', notificationSave);
+        }
+      }
+    }
 
     // Persiapkan URL gambar untuk respons
     let imageUrl;
