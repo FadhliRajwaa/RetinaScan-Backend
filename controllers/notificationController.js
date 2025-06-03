@@ -193,9 +193,9 @@ export const createNotification = async (req, res, io) => {
 };
 
 // Fungsi utilitas untuk membuat notifikasi (untuk digunakan di controller lain)
-export const createNotificationUtil = async (io, data) => {
+export const createNotificationUtil = async (data) => {
   try {
-    const { userId, type, title, message, entityId, entityModel, additionalData } = data;
+    const { userId, type, title, message, entityId, entityModel, data: additionalData } = data;
     
     // Validasi data yang diperlukan
     if (!userId || !type || !title || !message) {
@@ -215,18 +215,21 @@ export const createNotificationUtil = async (io, data) => {
     });
     
     // Simpan notifikasi
-    await notification.save();
+    const savedNotification = await notification.save();
     
     // Mendapatkan jumlah notifikasi yang belum dibaca
     const unreadCount = await Notification.countUnread(userId);
     
-    // Kirim notifikasi melalui Socket.IO
-    io.to(`user:${userId}`).emit('notification', {
-      notification,
-      unreadCount
-    });
+    // Pastikan notifikasi memiliki ID sebelum dikembalikan
+    if (!savedNotification._id) {
+      console.error('Notifikasi tersimpan tanpa ID yang valid');
+      return null;
+    }
     
-    return notification;
+    console.log('Notifikasi baru dibuat dengan ID:', savedNotification._id);
+    
+    // Kembalikan notifikasi yang telah disimpan (dengan ID yang valid)
+    return savedNotification;
   } catch (error) {
     console.error('Error creating notification:', error);
     return null;

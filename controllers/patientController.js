@@ -43,7 +43,8 @@ export const createPatient = async (req, res, next) => {
     // Kirim notifikasi jika pengaturan notifikasi mengizinkan
     const user = await User.findById(req.user.id);
     if (user && user.notificationSettings && user.notificationSettings.patient_added) {
-      await createNotificationUtil({
+      // Buat notifikasi di database
+      const notification = await createNotificationUtil({
         userId: req.user.id,
         type: 'patient_added',
         title: 'Pasien Baru',
@@ -53,17 +54,14 @@ export const createPatient = async (req, res, next) => {
         data: { patientId: savedPatient._id, patientName: savedPatient.name }
       });
       
-      // Emit socket event untuk notifikasi real-time
+      // Emit socket event untuk notifikasi real-time dengan ID yang valid
       const io = req.app.get('io');
       const userRoom = `user:${req.user.id}`;
-      io.to(userRoom).emit('notification', {
-        type: 'patient_added',
-        title: 'Pasien Baru',
-        message: `Pasien baru "${savedPatient.name}" telah ditambahkan`,
-        entityId: savedPatient._id,
-        entityModel: 'Patient',
-        data: { patientId: savedPatient._id, patientName: savedPatient.name }
-      });
+      
+      // Hanya kirim notifikasi jika berhasil dibuat
+      if (notification) {
+        io.to(userRoom).emit('notification', notification);
+      }
     }
     
     res.status(201).json(savedPatient);
@@ -96,7 +94,8 @@ export const updatePatient = async (req, res, next) => {
     // Kirim notifikasi jika pengaturan notifikasi mengizinkan
     const user = await User.findById(req.user.id);
     if (user && user.notificationSettings && user.notificationSettings.patient_updated) {
-      await createNotificationUtil({
+      // Buat notifikasi di database
+      const notification = await createNotificationUtil({
         userId: req.user.id,
         type: 'patient_updated',
         title: 'Data Pasien Diperbarui',
@@ -106,17 +105,14 @@ export const updatePatient = async (req, res, next) => {
         data: { patientId: updatedPatient._id, patientName: updatedPatient.name, previousName }
       });
       
-      // Emit socket event untuk notifikasi real-time
+      // Emit socket event untuk notifikasi real-time dengan ID yang valid
       const io = req.app.get('io');
       const userRoom = `user:${req.user.id}`;
-      io.to(userRoom).emit('notification', {
-        type: 'patient_updated',
-        title: 'Data Pasien Diperbarui',
-        message: `Data pasien "${updatedPatient.name}" telah diperbarui`,
-        entityId: updatedPatient._id,
-        entityModel: 'Patient',
-        data: { patientId: updatedPatient._id, patientName: updatedPatient.name, previousName }
-      });
+      
+      // Hanya kirim notifikasi jika berhasil dibuat
+      if (notification) {
+        io.to(userRoom).emit('notification', notification);
+      }
     }
     
     res.json(updatedPatient);
@@ -145,7 +141,8 @@ export const deletePatient = async (req, res, next) => {
     // Kirim notifikasi jika pengaturan notifikasi mengizinkan
     const user = await User.findById(req.user.id);
     if (user && user.notificationSettings && user.notificationSettings.patient_deleted) {
-      await createNotificationUtil({
+      // Buat notifikasi di database
+      const notification = await createNotificationUtil({
         userId: req.user.id,
         type: 'patient_deleted',
         title: 'Pasien Dihapus',
@@ -153,15 +150,14 @@ export const deletePatient = async (req, res, next) => {
         data: { patientName }
       });
       
-      // Emit socket event untuk notifikasi real-time
+      // Emit socket event untuk notifikasi real-time dengan ID yang valid
       const io = req.app.get('io');
       const userRoom = `user:${req.user.id}`;
-      io.to(userRoom).emit('notification', {
-        type: 'patient_deleted',
-        title: 'Pasien Dihapus',
-        message: `Pasien "${patientName}" telah dihapus`,
-        data: { patientName }
-      });
+      
+      // Hanya kirim notifikasi jika berhasil dibuat
+      if (notification) {
+        io.to(userRoom).emit('notification', notification);
+      }
     }
     
     res.json({ message: 'Pasien berhasil dihapus' });
