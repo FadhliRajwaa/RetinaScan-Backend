@@ -327,8 +327,10 @@ testFlaskApiConnection().then(result => {
 
 // Fungsi simulasi prediksi jika Flask API tidak tersedia
 const simulatePrediction = (filename) => {
-  // Kelas yang mungkin
-  const classes = ['No DR', 'Mild', 'Moderate', 'Severe', 'Proliferative DR'];
+  // Kelas yang mungkin - sesuaikan dengan urutan yang sama dengan Flask API
+  // Urutan asli: ['No DR', 'Mild', 'Moderate', 'Severe', 'Proliferative DR']
+  // Urutan baru: ['Moderate', 'No DR', 'Proliferative DR', 'Mild', 'Severe']
+  const classes = ['Moderate', 'No DR', 'Proliferative DR', 'Mild', 'Severe'];
   
   // Membuat distribusi prediksi yang lebih realistis
   // No DR lebih umum, sedangkan Proliferative DR lebih jarang
@@ -336,15 +338,15 @@ const simulatePrediction = (filename) => {
   let classIndex;
   
   if (randomValue < 0.45) {
-    classIndex = 0; // No DR (45% kemungkinan)
+    classIndex = 1; // No DR (45% kemungkinan)
   } else if (randomValue < 0.65) {
-    classIndex = 1; // Mild (20% kemungkinan)
+    classIndex = 3; // Mild (20% kemungkinan)
   } else if (randomValue < 0.85) {
-    classIndex = 2; // Moderate (20% kemungkinan)
+    classIndex = 0; // Moderate (20% kemungkinan)
   } else if (randomValue < 0.95) {
-    classIndex = 3; // Severe (10% kemungkinan)
+    classIndex = 4; // Severe (10% kemungkinan)
   } else {
-    classIndex = 4; // Proliferative DR (5% kemungkinan)
+    classIndex = 2; // Proliferative DR (5% kemungkinan)
   }
   
   const confidence = 0.7 + (Math.random() * 0.3); // Kepercayaan antara 0.7 dan 1.0
