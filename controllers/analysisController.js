@@ -465,6 +465,84 @@ export const processRetinaImage = async (req, res) => {
 
     // Periksa apakah ini adalah penyimpanan manual dari hasil analisis sebelumnya
     const isManualSave = req.body.isManualSave === 'true' || req.body.isManualSave === true;
+    
+    // Jika ini adalah penyimpanan manual, kita tidak perlu membuat analisis baru
+    if (isManualSave) {
+      console.log('Ini adalah penyimpanan manual, tidak perlu membuat analisis baru');
+      
+      // Cari analisis terbaru untuk pasien ini
+      const RetinaAnalysis = req.app.get('models').RetinaAnalysis;
+      const latestAnalysis = await RetinaAnalysis.findOne({
+        patientId: req.body.patientId,
+        doctorId: req.user.id
+      }).sort({ createdAt: -1 });
+      
+      if (!latestAnalysis) {
+        return res.status(404).json({ message: 'Tidak ada analisis sebelumnya untuk pasien ini' });
+      }
+      
+      // Kirim notifikasi penyimpanan manual jika pengaturan notifikasi mengizinkan
+      const user = await User.findById(req.user.id);
+      if (user && user.notificationSettings && user.notificationSettings.scan_updated) {
+        // Buat notifikasi penyimpanan hasil berhasil
+        const notificationSave = await createNotificationUtil({
+          userId: req.user.id,
+          type: 'scan_updated',
+          title: 'Hasil Analisis Disimpan',
+          message: `Hasil analisis retina untuk pasien "${patient.name}" berhasil disimpan ke database`,
+          entityId: latestAnalysis._id,
+          entityModel: 'RetinaAnalysis',
+          data: { 
+            patientId: patient._id, 
+            patientName: patient.name,
+            analysisId: latestAnalysis._id,
+            severity: latestAnalysis.results.severity || latestAnalysis.severity,
+            severityLevel: latestAnalysis.results.severityLevel || latestAnalysis.severityLevel
+          }
+        });
+        
+        // Kirim notifikasi melalui Socket.IO jika berhasil dibuat
+        if (notificationSave && io) {
+          const userRoom = `user:${req.user.id}`;
+          io.to(userRoom).emit('notification', notificationSave);
+        }
+      }
+      
+      // Persiapkan URL gambar untuk respons
+      let imageUrl;
+      if (latestAnalysis.imageDetails && latestAnalysis.imageDetails.filename) {
+        imageUrl = `/uploads/${latestAnalysis.imageDetails.filename}`;
+      } else if (latestAnalysis.imageData) {
+        imageUrl = latestAnalysis.imageData; // Gunakan base64 langsung
+      }
+      
+      // Kirim respons ke klien dengan format yang konsisten
+      return res.status(200).json({
+        message: 'Analisis berhasil disimpan',
+        analysis: {
+          id: latestAnalysis._id,
+          analysisId: latestAnalysis.analysisId,
+          patientId: latestAnalysis.patientId,
+          patientName: patient.fullName || patient.name,
+          timestamp: latestAnalysis.timestamp,
+          createdAt: latestAnalysis.createdAt,
+          imageUrl,
+          results: {
+            severity: latestAnalysis.results.severity || latestAnalysis.severity,
+            severityLevel: latestAnalysis.results.severityLevel || latestAnalysis.severityLevel,
+            classification: latestAnalysis.results.classification,
+            confidence: latestAnalysis.results.confidence,
+            isSimulation: latestAnalysis.results.isSimulation
+          },
+          severity: latestAnalysis.results.severity || latestAnalysis.severity,
+          severityLevel: latestAnalysis.results.severityLevel || latestAnalysis.severityLevel,
+          confidence: latestAnalysis.results.confidence,
+          recommendation: latestAnalysis.recommendation,
+          notes: latestAnalysis.notes,
+          isSimulation: latestAnalysis.results.isSimulation
+        }
+      });
+    }
 
     // Gunakan analysisId sebagai identifier unik
     const analysisId = uuidv4();
