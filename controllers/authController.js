@@ -237,3 +237,33 @@ export const resetPassword = async (req, res, next) => {
     res.status(500).json({ message: 'Gagal mengatur ulang kata sandi. Silakan coba lagi.' });
   }
 };
+
+// Fungsi untuk mengubah password dengan verifikasi password saat ini
+export const changePassword = async (req, res, next) => {
+  const { currentPassword, password } = req.body;
+  
+  try {
+    // Dapatkan user dari ID yang ada di token (dari middleware auth)
+    const user = await User.findById(req.user.id);
+    
+    if (!user) {
+      return res.status(404).json({ message: 'Pengguna tidak ditemukan' });
+    }
+    
+    // Verifikasi password saat ini
+    const isMatch = await user.matchPassword(currentPassword);
+    
+    if (!isMatch) {
+      return res.status(401).json({ message: 'Password saat ini tidak valid' });
+    }
+    
+    // Set password baru
+    user.password = password;
+    await user.save();
+    
+    res.json({ message: 'Password berhasil diperbarui' });
+  } catch (error) {
+    console.error('Gagal mengubah password:', error.message);
+    res.status(500).json({ message: 'Gagal mengubah password. Silakan coba lagi.' });
+  }
+};
