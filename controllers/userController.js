@@ -12,6 +12,7 @@ export const getProfile = async (req, res, next) => {
 
 export const updateProfile = async (req, res, next) => {
   const { 
+    name,
     fullName, 
     dateOfBirth, 
     gender, 
@@ -28,6 +29,11 @@ export const updateProfile = async (req, res, next) => {
     const user = await User.findById(req.user.id);
     if (!user) return res.status(404).json({ message: 'Pengguna tidak ditemukan' });
 
+    // Update nama pengguna jika ada
+    if (name !== undefined) {
+      user.name = name;
+    }
+    
     user.fullName = fullName || user.fullName;
     user.dateOfBirth = dateOfBirth || user.dateOfBirth;
     user.gender = gender || user.gender;
